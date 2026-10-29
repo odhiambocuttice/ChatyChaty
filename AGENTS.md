@@ -173,13 +173,14 @@ Handy supports command-line parameters on all platforms for integration with scr
 
 **Implementation:** `cli.rs` (definitions), `main.rs` (parsing), `lib.rs` (applying), `signal_handle.rs` (shared logic)
 
-| Flag                     | Description                                                |
-| ------------------------ | ---------------------------------------------------------- |
-| `--toggle-transcription` | Toggle recording on/off on a running instance              |
-| `--cancel`               | Cancel the current operation on a running instance         |
-| `--start-hidden`         | Launch without showing the main window (tray icon visible) |
-| `--no-tray`              | Launch without system tray (closing window quits the app)  |
-| `--debug`                | Enable debug mode with verbose (Trace) logging             |
+| Flag                     | Description                                                        |
+| ------------------------ | ------------------------------------------------------------------ |
+| `--toggle-transcription` | Toggle recording on/off on a running instance                      |
+| `--cancel`               | Cancel the current operation on a running instance                 |
+| `--start-hidden`         | Launch without showing the main window (tray icon visible)         |
+| `--no-tray`              | Launch without system tray (closing window quits the app)          |
+| `--debug`                | Enable debug mode with verbose (Trace) logging                     |
+| `--list-devices`         | Print the speech engine's compute devices and exit (CI smoke test) |
 
 **Key design decisions:**
 

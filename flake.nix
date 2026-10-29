@@ -102,10 +102,6 @@
             };
 
             postPatch = ''
-              ${pkgs.jq}/bin/jq '.bundle.createUpdaterArtifacts = false' \
-                src-tauri/tauri.conf.json > $TMPDIR/tauri.conf.json
-              cp $TMPDIR/tauri.conf.json src-tauri/tauri.conf.json
-
               # Strip postinstall hook — it runs check-nix-deps.ts which is only
               # needed during local development, not inside the Nix sandbox.
               ${pkgs.jq}/bin/jq 'del(.scripts.postinstall)' \
@@ -118,13 +114,6 @@
                 --replace-fail \
                   "libayatana-appindicator3.so.1" \
                   "${pkgs.libayatana-appindicator}/lib/libayatana-appindicator3.so.1"
-
-              # Disable cbindgen in ferrous-opencc (calls cargo metadata which fails in sandbox)
-              # Upstream removed this call in v0.3.1+
-              substituteInPlace $cargoDepsCopy/ferrous-opencc-0.2.3/build.rs \
-                --replace-fail '.expect("Unable to generate bindings")' '.ok();'
-              substituteInPlace $cargoDepsCopy/ferrous-opencc-0.2.3/build.rs \
-                --replace-fail '.write_to_file("opencc.h");' '// skipped'
             '';
 
             # Bun dependencies: fetched per-package using hashes from .nix/bun.nix.
@@ -166,10 +155,6 @@
               gappsWrapperArgs+=(
                 --set-default WEBKIT_DISABLE_DMABUF_RENDERER 1
                 --set ALSA_PLUGIN_DIR "${combinedAlsaPlugins}"
-                # Self-update can't work against an immutable /nix/store install
-                # (downloadAndInstall would try to overwrite the store path), so
-                # the Nix-built package always disables the updater.
-                --set HANDY_DISABLE_UPDATER 1
               )
             '';
 

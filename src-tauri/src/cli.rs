@@ -22,4 +22,10 @@ pub struct CliArgs {
     /// Enable debug mode with verbose logging
     #[arg(long)]
     pub debug: bool,
+
+    /// List the compute devices the speech engine can use, then exit. Needs
+    /// no window, microphone or model; the packaging smoke tests use it to
+    /// check that the engine and its backends load from an installed build.
+    #[arg(long)]
+    pub list_devices: bool,
 }

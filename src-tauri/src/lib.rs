@@ -310,6 +310,71 @@ fn show_main_window_command(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Writes log records to stderr, for the one run mode that has no Tauri log
+/// plugin: `--list-devices`.
+struct StderrLogger;
+
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::max_level()
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            eprintln!(
+                "[{}][{}] {}",
+                record.level(),
+                record.target(),
+                record.args()
+            );
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+/// `--list-devices`: print the compute devices the speech engine registers
+/// and return the process exit code. The engine runs in its own worker
+/// process, so this starts no window and loads no model.
+fn run_list_devices() -> i32 {
+    use std::io::Write;
+
+    static LOGGER: StderrLogger = StderrLogger;
+    if log::set_logger(&LOGGER).is_ok() {
+        log::set_max_level(log::LevelFilter::Info);
+    }
+
+    let engine =
+        engine_supervisor::EngineSupervisor::new(!utils::is_windows_x64_emulated_on_arm64());
+    let code = match engine.devices() {
+        Some(devices) if devices.is_empty() => {
+            println!("No transcribe-cpp compute devices registered.");
+            0
+        }
+        Some(devices) => {
+            println!("transcribe-cpp compute devices:");
+            for d in &devices {
+                println!(
+                    "  index={} kind={} name={} vram={}MB",
+                    d.index
+                        .map(|i| i.to_string())
+                        .unwrap_or_else(|| "-".to_string()),
+                    d.kind,
+                    d.label(),
+                    d.memory_total / (1024 * 1024)
+                );
+            }
+            0
+        }
+        None => {
+            eprintln!("error: compute devices could not be listed (see the log for why)");
+            1
+        }
+    };
+    let _ = std::io::stdout().flush();
+    code
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(cli_args: CliArgs) {
     // Avoid ggml-metal residency-set teardown assertions when a native engine
@@ -332,6 +397,13 @@ pub fn run(cli_args: CliArgs) {
 
     // Detect portable mode before anything else
     portable::init();
+
+    // Device listing is a one-shot run: no window, no single-instance handling.
+    if cli_args.list_devices {
+        // process::exit runs no destructors; the worker ends by itself when
+        // its stdin closes.
+        std::process::exit(run_list_devices());
+    }
 
     // Parse console logging directives from RUST_LOG, falling back to info-level logging
     // when the variable is unset
