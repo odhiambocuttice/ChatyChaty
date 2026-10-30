@@ -60,6 +60,9 @@ jobs:
       # A fork has none of the signing secrets. Without the certificate the
       # macOS build is simply left unsigned instead of failing.
       APPLE_SIGNING_ENABLED: ${{ inputs.sign-binaries && secrets.APPLE_CERTIFICATE != '' }}
+      # Likewise for Windows: without the Azure credentials the installers are
+      # left unsigned instead of failing at the signing command.
+      WINDOWS_SIGNING_ENABLED: ${{ inputs.sign-binaries && secrets.AZURE_CLIENT_ID != '' }}
     steps:
       # Kept for git checkout and general tooling headroom. The native
       # transcribe-cpp-sys build no longer needs path help: since 0.1.3 its
@@ -168,7 +171,7 @@ jobs:
           cache: true
 
       - name: Cache trusted-signing-cli
-        if: contains(inputs.platform, 'windows') && inputs.sign-binaries
+        if: contains(inputs.platform, 'windows') && env.WINDOWS_SIGNING_ENABLED == 'true'
         id: cache-tsc
         uses: actions/cache@v5
         with:
@@ -176,7 +179,7 @@ jobs:
           key: trusted-signing-cli-${{ env.TSC_VERSION }}-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install trusted-signing-cli
-        if: contains(inputs.platform, 'windows') && inputs.sign-binaries && steps.cache-tsc.outputs.cache-hit != 'true'
+        if: contains(inputs.platform, 'windows') && env.WINDOWS_SIGNING_ENABLED == 'true' && steps.cache-tsc.outputs.cache-hit != 'true'
         run: cargo install --locked --force trusted-signing-cli@${{ env.TSC_VERSION }}
 
       - name: Prepare Vulkan SDK for Ubuntu 24.04
@@ -451,10 +454,17 @@ jobs:
           "$tools_dir/linuxdeploy-${arch}.AppImage" --appimage-extract-and-run --version
 
       # Tauri treats an empty APPLE_CERTIFICATE as a certificate to import and
-      # fails, so a macOS build without the signing secrets has its own step
-      # with no Apple variables set at all.
-      - name: Build with Tauri (macOS, unsigned)
-        if: contains(inputs.platform, 'macos') && env.APPLE_SIGNING_ENABLED != 'true'
+      # fails, and Windows runs the configured signing command whatever the
+      # secrets hold. A build without the signing secrets therefore has its own
+      # step with no signing variables set, and on Windows a config override
+      # that removes the signing command.
+      - name: Disable Windows signing command
+        if: contains(inputs.platform, 'windows') && env.WINDOWS_SIGNING_ENABLED != 'true'
+        shell: bash
+        run: echo '{"bundle":{"windows":{"signCommand":null}}}' > unsigned-windows.json
+
+      - name: Build with Tauri (unsigned)
+        if: (contains(inputs.platform, 'macos') && env.APPLE_SIGNING_ENABLED != 'true') || (contains(inputs.platform, 'windows') && env.WINDOWS_SIGNING_ENABLED != 'true')
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -463,10 +473,10 @@ jobs:
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
           assetNamePattern: ${{ steps.patch-release-name.outputs.platform }}
-          args: ${{ inputs.build-args }}
+          args: ${{ inputs.build-args }}${{ contains(inputs.platform, 'windows') && ' --config unsigned-windows.json' || '' }}
 
       - name: Build with Tauri
-        if: ${{ !(contains(inputs.platform, 'macos') && env.APPLE_SIGNING_ENABLED != 'true') }}
+        if: ${{ !((contains(inputs.platform, 'macos') && env.APPLE_SIGNING_ENABLED != 'true') || (contains(inputs.platform, 'windows') && env.WINDOWS_SIGNING_ENABLED != 'true')) }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
