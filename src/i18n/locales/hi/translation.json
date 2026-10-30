@@ -42,6 +42,10 @@
         "label": "छिपाकर शुरू करें",
         "description": "विंडो खोले बिना सिस्टम ट्रे में लॉन्च करें."
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "स्टार्टअप पर लॉन्च करें",
         "description": "कंप्यूटर में लॉग इन करने पर Handy अपने आप शुरू हो जाए."

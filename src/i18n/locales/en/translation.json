@@ -42,6 +42,10 @@
         "label": "Start Hidden",
         "description": "Launch to system tray without opening the window."
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "Launch on Startup",
         "description": "Automatically start Handy when you log in to your computer."

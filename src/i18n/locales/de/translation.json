@@ -42,6 +42,10 @@
         "label": "Versteckt starten",
         "description": "In den Systembereich starten, ohne das Fenster zu öffnen."
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "Beim Start ausführen",
         "description": "Handy automatisch beim Anmelden starten."

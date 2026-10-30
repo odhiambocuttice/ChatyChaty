@@ -42,6 +42,10 @@
         "label": "लुकेर सुरु गर्नुहोस्",
         "description": "विन्डो नखोली सिस्टम ट्रेमा सुरु गर्नुहोस्।"
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "स्टार्टअपमा सुरु गर्नुहोस्",
         "description": "कम्प्युटरमा लगइन गर्दा Handy स्वतः सुरु गर्नुहोस्।"

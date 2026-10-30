@@ -42,6 +42,10 @@
         "label": "Khởi động ẩn",
         "description": "Khởi động vào khay hệ thống mà không mở cửa sổ."
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "Khởi động cùng hệ thống",
         "description": "Tự động khởi động Handy khi bạn đăng nhập vào máy tính."

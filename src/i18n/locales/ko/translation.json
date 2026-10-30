@@ -42,6 +42,10 @@
         "label": "숨김으로 시작",
         "description": "창을 열지 않고 시스템 트레이에서 실행합니다."
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "시작 시 실행",
         "description": "컴퓨터 로그인 시 Handy를 자동으로 시작합니다."

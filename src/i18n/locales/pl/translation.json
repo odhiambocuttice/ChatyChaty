@@ -42,6 +42,10 @@
         "label": "Uruchom ukryty",
         "description": "Uruchom w zasobniku systemowym bez otwierania okna."
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "Uruchamiaj przy starcie",
         "description": "Automatycznie uruchamiaj Handy po zalogowaniu."

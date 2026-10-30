@@ -42,6 +42,10 @@
         "label": "Inicia ocult",
         "description": "Inicia a la safata del sistema sense obrir la finestra."
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "Inicia en entrar a la sessió",
         "description": "Inicia automàticament el Handy quan entreu a la sessió de l'ordinador."

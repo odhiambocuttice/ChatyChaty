@@ -42,6 +42,10 @@
         "label": "Gizli Başlat",
         "description": "Pencereyi açmadan sistem tepsisinde başlatır."
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "Başlangıçta Çalıştır",
         "description": "Bilgisayara giriş yaptığınızda Handy otomatik olarak başlatılır."

@@ -42,6 +42,10 @@
         "label": "Starta dold",
         "description": "Starta i systemfältet utan att öppna fönstret."
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "Starta vid uppstart",
         "description": "Starta Handy automatiskt när du loggar in på din dator."

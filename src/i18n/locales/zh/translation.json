@@ -42,6 +42,10 @@
         "label": "隐藏启动",
         "description": "启动到系统托盘而不打开窗口。"
       },
+      "muteWhileRecording": {
+        "label": "Mute While Recording",
+        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      },
       "autostart": {
         "label": "开机启动",
         "description": "登录计算机时自动启动 Handy。"

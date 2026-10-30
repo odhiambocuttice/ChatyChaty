@@ -37,6 +37,8 @@ const settingUpdaters: {
   [K in keyof Settings]?: (value: Settings[K]) => Promise<unknown>;
 } = {
   start_hidden: (value) => commands.changeStartHiddenSetting(value as boolean),
+  mute_while_recording: (value) =>
+    commands.changeMuteWhileRecordingSetting(value as boolean),
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),
   selected_microphone: (value) =>
