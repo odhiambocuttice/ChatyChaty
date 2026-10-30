@@ -56,6 +56,10 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ inputs.platform }}
+    env:
+      # A fork has none of the signing secrets. Without the certificate the
+      # macOS build is simply left unsigned instead of failing.
+      APPLE_SIGNING_ENABLED: ${{ inputs.sign-binaries && secrets.APPLE_CERTIFICATE != '' }}
     steps:
       # Kept for git checkout and general tooling headroom. The native
       # transcribe-cpp-sys build no longer needs path help: since 0.1.3 its
@@ -219,7 +223,7 @@ jobs:
         run: rustup target add ${{ inputs.target }}
 
       - name: import Apple Developer Certificate
-        if: contains(inputs.platform, 'macos') && inputs.sign-binaries
+        if: contains(inputs.platform, 'macos') && env.APPLE_SIGNING_ENABLED == 'true'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -235,7 +239,7 @@ jobs:
           security find-identity -v -p codesigning build.keychain
 
       - name: verify certificate
-        if: contains(inputs.platform, 'macos') && inputs.sign-binaries
+        if: contains(inputs.platform, 'macos') && env.APPLE_SIGNING_ENABLED == 'true'
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
