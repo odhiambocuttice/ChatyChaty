@@ -140,9 +140,9 @@ async resumeAllBindings() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async changeMuteWhileRecordingSetting(enabled: boolean) : Promise<Result<null, string>> {
+async changePauseMediaWhileRecordingSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("change_mute_while_recording_setting", { enabled }) };
+    return { status: "ok", data: await TAURI_INVOKE("change_pause_media_while_recording_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -511,7 +511,7 @@ hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: nu
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; mute_while_recording?: boolean; app_language?: string; theme?: Theme; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; extra_recording_buffer_ms?: number; vad_enabled?: boolean; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; pause_media_while_recording?: boolean; app_language?: string; theme?: Theme; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; extra_recording_buffer_ms?: number; vad_enabled?: boolean; 
 /**
  * Experimental detector implementation. Silero remains the stable default.
  */

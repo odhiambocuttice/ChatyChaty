@@ -8,6 +8,7 @@ use crate::audio_toolkit::{
 };
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
+use crate::media::{self, PausedMedia};
 use crate::settings::{get_settings, write_settings, AppSettings, VadBackend};
 use crate::utils;
 use handy_recorder::{Channels, EndReason, ErrorKind, Recorder, RecorderConfig, StartError};
@@ -20,216 +21,6 @@ use tauri::{Emitter, Manager};
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const SILERO_VAD_THRESHOLD: f32 = 0.3;
 const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
-
-fn set_mute(mute: bool) {
-    // Expected behavior:
-    // - Windows: works on most systems using standard audio drivers.
-    // - Linux: works on many systems (PipeWire, PulseAudio, ALSA),
-    //   but some distros may lack the tools used.
-    // - macOS: works on most standard setups via AppleScript.
-    // If unsupported, fails silently.
-
-    #[cfg(target_os = "windows")]
-    {
-        unsafe {
-            use windows::Win32::{
-                Media::Audio::{
-                    eMultimedia, eRender, Endpoints::IAudioEndpointVolume, IMMDeviceEnumerator,
-                    MMDeviceEnumerator,
-                },
-                System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED},
-            };
-
-            macro_rules! unwrap_or_return {
-                ($expr:expr) => {
-                    match $expr {
-                        Ok(val) => val,
-                        Err(_) => return,
-                    }
-                };
-            }
-
-            // Initialize the COM library for this thread.
-            // If already initialized (e.g., by another library like Tauri), this does nothing.
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-
-            let all_devices: IMMDeviceEnumerator =
-                unwrap_or_return!(CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL));
-            let default_device =
-                unwrap_or_return!(all_devices.GetDefaultAudioEndpoint(eRender, eMultimedia));
-            let volume_interface = unwrap_or_return!(
-                default_device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None)
-            );
-
-            let _ = volume_interface.SetMute(mute, std::ptr::null());
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        use std::process::Command;
-
-        let mute_val = if mute { "1" } else { "0" };
-        let amixer_state = if mute { "mute" } else { "unmute" };
-
-        // Try multiple backends to increase compatibility
-        // 1. PipeWire (wpctl)
-        if Command::new("wpctl")
-            .args(["set-mute", "@DEFAULT_AUDIO_SINK@", mute_val])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return;
-        }
-
-        // 2. PulseAudio (pactl)
-        if Command::new("pactl")
-            .args(["set-sink-mute", "@DEFAULT_SINK@", mute_val])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return;
-        }
-
-        // 3. ALSA (amixer)
-        let _ = Command::new("amixer")
-            .args(["set", "Master", amixer_state])
-            .output();
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        use std::process::Command;
-        let script = format!(
-            "set volume output muted {}",
-            if mute { "true" } else { "false" }
-        );
-        let _ = Command::new("osascript").args(["-e", &script]).output();
-    }
-}
-
-/// Reads the current system output mute state, mirroring `set_mute`'s backends.
-///
-/// Returns `Some(true)`/`Some(false)` when the state could be determined, or
-/// `None` when it couldn't (unsupported platform, missing CLI tools, or an
-/// error). Callers treat `None` as "unknown" and fall back to unmuting on stop,
-/// so we never strand the user's audio muted.
-#[cfg(target_os = "windows")]
-fn get_mute() -> Option<bool> {
-    unsafe {
-        use windows::Win32::{
-            Media::Audio::{
-                eMultimedia, eRender, Endpoints::IAudioEndpointVolume, IMMDeviceEnumerator,
-                MMDeviceEnumerator,
-            },
-            System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED},
-        };
-
-        // Matches set_mute: no-op if COM is already initialized on this thread.
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-
-        let all_devices: IMMDeviceEnumerator =
-            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
-        let default_device = all_devices
-            .GetDefaultAudioEndpoint(eRender, eMultimedia)
-            .ok()?;
-        let volume_interface = default_device
-            .Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None)
-            .ok()?;
-
-        Some(volume_interface.GetMute().ok()?.as_bool())
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn get_mute() -> Option<bool> {
-    use std::process::Command;
-
-    // 1. PipeWire (wpctl): prints "[MUTED]" in the volume line when muted.
-    if let Ok(out) = Command::new("wpctl")
-        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
-        .output()
-    {
-        if out.status.success() {
-            return Some(String::from_utf8_lossy(&out.stdout).contains("[MUTED]"));
-        }
-    }
-
-    // 2. PulseAudio (pactl): prints "Mute: yes" / "Mute: no".
-    // Force LC_ALL=C so a localized system still emits the parseable English
-    // "yes"/"no" instead of e.g. "ja"/"nein".
-    if let Ok(out) = Command::new("pactl")
-        .env("LC_ALL", "C")
-        .args(["get-sink-mute", "@DEFAULT_SINK@"])
-        .output()
-    {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout).to_lowercase();
-            if s.contains("yes") {
-                return Some(true);
-            }
-            if s.contains("no") {
-                return Some(false);
-            }
-        }
-    }
-
-    // 3. ALSA (amixer): prints "[off]" for muted channels, "[on]" otherwise.
-    // LC_ALL=C keeps the "[on]"/"[off]" tokens stable across locales.
-    if let Ok(out) = Command::new("amixer")
-        .env("LC_ALL", "C")
-        .args(["get", "Master"])
-        .output()
-    {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout);
-            if s.contains("[off]") {
-                return Some(true);
-            }
-            if s.contains("[on]") {
-                return Some(false);
-            }
-        }
-    }
-
-    None
-}
-
-#[cfg(target_os = "macos")]
-fn get_mute() -> Option<bool> {
-    use std::process::Command;
-
-    let out = Command::new("osascript")
-        .args(["-e", "output muted of (get volume settings)"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    match String::from_utf8_lossy(&out.stdout).trim() {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    }
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-fn get_mute() -> Option<bool> {
-    None
-}
-
-/// Restores the system mute state after our forced mute, given the state
-/// captured just before we muted. We only ever need to unmute — and only when
-/// the system was NOT already muted beforehand. If the prior state was muted,
-/// we leave it muted (the user's own state). If it's unknown (`None`), we
-/// default to unmuting so audio is never left stranded muted by us.
-fn restore_mute(prev_muted: Option<bool>) {
-    if prev_muted != Some(true) {
-        set_mute(false);
-    }
-}
 
 const WHISPER_SAMPLE_RATE: usize = 16000;
 
@@ -246,16 +37,6 @@ pub enum RecordingState {
 pub enum MicrophoneMode {
     AlwaysOn,
     OnDemand,
-}
-
-/// Tracks our forced "mute while recording" so we can restore the user's audio
-/// exactly as it was. `did_mute` is true while our mute is active; `prev_muted`
-/// is the system mute state captured just before we muted, used to decide
-/// whether to unmute on stop (so a system that was already muted stays muted).
-#[derive(Debug, Default, Clone, Copy)]
-struct MuteState {
-    did_mute: bool,
-    prev_muted: Option<bool>,
 }
 
 /// The persisted microphone preference currently in effect. Clamshell and
@@ -475,7 +256,7 @@ pub struct AudioRecordingManager {
     on_audio: AudioFrameCallback,
     is_open: Arc<Mutex<bool>>,
     is_recording: Arc<Mutex<bool>>,
-    mute_state: Arc<Mutex<MuteState>>,
+    paused_media: Arc<Mutex<Option<PausedMedia>>>,
     close_generation: Arc<AtomicU64>,
     cancel_generation: Arc<AtomicU64>,
     /// Lock-free mirror of "is the state in {Recording, Stopping}",
@@ -531,7 +312,7 @@ impl AudioRecordingManager {
             on_audio,
             is_open: Arc::new(Mutex::new(false)),
             is_recording: Arc::new(Mutex::new(false)),
-            mute_state: Arc::new(Mutex::new(MuteState::default())),
+            paused_media: Arc::new(Mutex::new(None)),
             close_generation: Arc::new(AtomicU64::new(0)),
             cancel_generation: Arc::new(AtomicU64::new(0)),
             recording_active: Arc::new(AtomicBool::new(false)),
@@ -740,43 +521,23 @@ impl AudioRecordingManager {
 
     /* ---------- microphone life-cycle -------------------------------------- */
 
-    /// Applies mute if mute_while_recording is enabled and stream is open.
-    /// Snapshots the system's prior mute state first so `remove_mute` can
-    /// restore it instead of unconditionally unmuting.
-    pub fn apply_mute(&self) {
-        let settings = get_settings(&self.app_handle);
-        if !settings.mute_while_recording {
+    /// Pauses the media that is playing, if `pause_media_while_recording` is on.
+    /// Does nothing when nothing is playing or media is already paused by us.
+    pub fn pause_media(&self) {
+        if !get_settings(&self.app_handle).pause_media_while_recording {
             return;
         }
 
-        // Lock order: is_open before mute_state (matches stop_microphone_stream).
-        let is_open = self.is_open.lock().unwrap();
-        let mut mute_guard = self.mute_state.lock().unwrap();
-        // Already muted this session — don't re-snapshot, or a duplicate/late
-        // apply would overwrite prev_muted with our own forced-muted state and
-        // strand audio muted on stop.
-        if mute_guard.did_mute {
-            return;
-        }
-        if *is_open {
-            mute_guard.prev_muted = get_mute();
-            set_mute(true);
-            mute_guard.did_mute = true;
-            debug!("Mute applied (prev_muted={:?})", mute_guard.prev_muted);
+        let mut paused = self.paused_media.lock().unwrap();
+        if paused.is_none() {
+            *paused = media::pause(&self.app_handle);
         }
     }
 
-    /// Removes mute if it was applied, restoring the system's prior mute state
-    /// (a system already muted before recording stays muted).
-    pub fn remove_mute(&self) {
-        let mut mute_guard = self.mute_state.lock().unwrap();
-        if mute_guard.did_mute {
-            restore_mute(mute_guard.prev_muted);
-            mute_guard.did_mute = false;
-            debug!(
-                "Mute removed (restored prev_muted={:?})",
-                mute_guard.prev_muted
-            );
+    /// Plays again the media `pause_media` paused. Does nothing otherwise.
+    pub fn resume_media(&self) {
+        if let Some(paused) = self.paused_media.lock().unwrap().take() {
+            media::resume(&self.app_handle, paused);
         }
     }
 
@@ -806,13 +567,6 @@ impl AudioRecordingManager {
 
             // Torn down inline rather than via stop_microphone_stream(), which
             // takes the `is_open` lock we are already holding.
-            {
-                let mut mute_guard = self.mute_state.lock().unwrap();
-                if mute_guard.did_mute {
-                    restore_mute(mute_guard.prev_muted);
-                    mute_guard.did_mute = false;
-                }
-            }
             let failed = self.recorder.lock().unwrap().take();
             if let Some(microphone) = failed {
                 self.close_microphone(microphone);
@@ -824,18 +578,6 @@ impl AudioRecordingManager {
         }
 
         let start_time = Instant::now();
-
-        // Don't mute immediately - caller will handle muting after audio feedback.
-        // The previous stream restored audio on close, so did_mute should already
-        // be false here; if it somehow isn't, restore rather than just clearing the
-        // flag, which would strand system audio muted.
-        {
-            let mut mute_guard = self.mute_state.lock().unwrap();
-            if mute_guard.did_mute {
-                restore_mute(mute_guard.prev_muted);
-                mute_guard.did_mute = false;
-            }
-        }
 
         // Get the selected device from settings, considering clamshell mode.
         // No pre-flight enumeration here: when nothing is configured the
@@ -900,13 +642,7 @@ impl AudioRecordingManager {
             return;
         }
 
-        {
-            let mut mute_guard = self.mute_state.lock().unwrap();
-            if mute_guard.did_mute {
-                restore_mute(mute_guard.prev_muted);
-            }
-            mute_guard.did_mute = false;
-        }
+        self.resume_media();
 
         let microphone = self.recorder.lock().unwrap().take();
         if let Some(microphone) = microphone {
@@ -1290,6 +1026,7 @@ impl AudioRecordingManager {
                 }
 
                 *self.is_recording.lock().unwrap() = false;
+                self.resume_media();
 
                 // In on-demand mode, close the mic (lazily if the setting is enabled)
                 if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {

@@ -9,6 +9,7 @@ pub mod engine_supervisor;
 mod helpers;
 mod input;
 mod managers;
+mod media;
 mod memory;
 mod overlay;
 pub mod portable;
@@ -427,7 +428,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_extra_recording_buffer_setting,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
-            shortcut::change_mute_while_recording_setting,
+            shortcut::change_pause_media_while_recording_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_vad_enabled_setting,
             shortcut::change_vad_backend_setting,

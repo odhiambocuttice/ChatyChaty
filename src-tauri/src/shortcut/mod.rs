@@ -792,9 +792,12 @@ pub fn change_extra_recording_buffer_setting(app: AppHandle, ms: u64) -> Result<
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_mute_while_recording_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+pub fn change_pause_media_while_recording_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.mute_while_recording = enabled;
+    settings.pause_media_while_recording = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }

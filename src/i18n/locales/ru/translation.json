@@ -42,9 +42,9 @@
         "label": "Скрыть при запуске",
         "description": "Запускать в системный трей, не открывая окно."
       },
-      "muteWhileRecording": {
-        "label": "Mute While Recording",
-        "description": "Mute system audio while you dictate, so music stops playing in the background."
+      "pauseMediaWhileRecording": {
+        "label": "Pause Music While Recording",
+        "description": "Pause music or video that is playing while you dictate, and play it again afterwards."
       },
       "autostart": {
         "label": "Запускать при старте",

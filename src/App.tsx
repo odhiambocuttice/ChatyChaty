@@ -12,7 +12,7 @@ import { PermissionsScreen } from "./components/Permissions";
 import {
   AutostartToggle,
   MicrophoneSelector,
-  MuteWhileRecording,
+  PauseMediaWhileRecording,
   ShortcutInput,
   ShowOverlay,
   StartHidden,
@@ -169,7 +169,10 @@ function App() {
               <ShortcutInput shortcutId="transcribe" grouped={true} />
             </SettingsGroup>
             <SettingsGroup title={t("settings.basics.title")}>
-              <MuteWhileRecording descriptionMode="tooltip" grouped={true} />
+              <PauseMediaWhileRecording
+                descriptionMode="tooltip"
+                grouped={true}
+              />
               <ShowOverlay descriptionMode="tooltip" grouped={true} />
               <StartHidden descriptionMode="tooltip" grouped={true} />
               <AutostartToggle descriptionMode="tooltip" grouped={true} />

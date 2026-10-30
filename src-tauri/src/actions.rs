@@ -174,6 +174,11 @@ impl ShortcutAction for TranscribeAction {
         );
         debug!("Microphone mode - always_on: {}", is_always_on);
 
+        // Pause the music before the microphone opens: some headsets use one
+        // audio device for both, and an open microphone would make an idle
+        // device look busy.
+        rm.pause_media();
+
         let mut recording_error: Option<anyhow::Error> = None;
         let recording_start_time = Instant::now();
         match rm.try_start_recording(&binding_id, vad_policy) {
@@ -202,12 +207,9 @@ impl ShortcutAction for TranscribeAction {
                     // The start chime is a readiness cue, so it must follow the
                     // first real input callback rather than Stream::play() or a
                     // fixed delay. The helper returns immediately when feedback
-                    // is disabled; mute still follows the same readiness point.
+                    // is disabled.
                     if rm_clone.is_recording_readiness_current(generation) {
                         play_feedback_sound_blocking(&app_clone, SoundType::Start);
-                    }
-                    if rm_clone.is_recording_readiness_current(generation) {
-                        rm_clone.apply_mute();
                     }
                 });
             }
@@ -226,6 +228,11 @@ impl ShortcutAction for TranscribeAction {
             tm.cancel_stream();
             utils::hide_recording_overlay(app);
             set_tray_state(app, TrayIconState::Idle);
+            // A rejected second start ("Already recording") must not resume
+            // the music of the recording that is still going.
+            if !rm.is_recording() {
+                rm.resume_media();
+            }
             if let Some(err) = recording_error {
                 let _ = app.emit(
                     "recording-error",
@@ -274,8 +281,8 @@ impl ShortcutAction for TranscribeAction {
             show_transcribing_overlay(app);
         }
 
-        // Unmute before playing audio feedback so the stop sound is audible
-        rm.remove_mute();
+        // Play the music again as soon as the user stops talking.
+        rm.resume_media();
 
         // Play audio feedback for recording stop
         play_feedback_sound(app, SoundType::Stop);

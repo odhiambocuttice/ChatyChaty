@@ -233,7 +233,7 @@ pub struct AppSettings {
     #[serde(default = "default_log_level")]
     pub log_level: LogLevel,
     #[serde(default)]
-    pub mute_while_recording: bool,
+    pub pause_media_while_recording: bool,
     #[serde(default = "default_app_language")]
     pub app_language: String,
     #[serde(default = "default_theme")]
@@ -373,7 +373,7 @@ pub fn get_default_settings() -> AppSettings {
         overlay_position: default_overlay_position(),
         debug_mode: false,
         log_level: default_log_level(),
-        mute_while_recording: false,
+        pause_media_while_recording: false,
         app_language: default_app_language(),
         theme: default_theme(),
         lazy_stream_close: false,
@@ -666,7 +666,7 @@ mod tests {
                 { "id": "default", "name": "Default", "prompt": "Clean up the transcript." }
             ],
             "post_process_selected_prompt_id": null,
-            "mute_while_recording": false,
+            "pause_media_while_recording": false,
             "append_trailing_space": false,
             "app_language": "en",
             "experimental_enabled": false,
@@ -727,14 +727,17 @@ mod tests {
         let map = stored.as_object_mut().unwrap();
         map.insert("hold_threshold_ms".into(), serde_json::json!("sixty"));
         map.insert("sound_theme".into(), serde_json::json!(42));
-        map.insert("mute_while_recording".into(), serde_json::json!(true));
+        map.insert(
+            "pause_media_while_recording".into(),
+            serde_json::json!(true),
+        );
 
         assert!(serde_json::from_value::<AppSettings>(stored.clone()).is_err());
 
         let salvaged = salvage_settings(&stored);
         assert_eq!(salvaged.hold_threshold_ms, default_hold_threshold_ms());
         assert_eq!(salvaged.sound_theme, default_sound_theme());
-        assert!(salvaged.mute_while_recording);
+        assert!(salvaged.pause_media_while_recording);
     }
 
     #[test]
