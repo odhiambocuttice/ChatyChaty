@@ -57,6 +57,7 @@
       "overlay": {
         "style": {
           "title": "Накладка",
+          "label": "Style",
           "description": "Виберіть накладку під час запису: «Немає» приховує її, «Мінімальна» показує компактний індикатор, «У реальному часі» показує транскрипцію під час мовлення (лише моделі з підтримкою потокової обробки — шукайте позначку «Потокове» у списку моделей). У Linux рекомендовано «Немає».",
           "options": {
             "none": "Немає",
@@ -66,6 +67,7 @@
         },
         "position": {
           "title": "Позиція оверлею",
+          "label": "Position",
           "description": "Показувати візуальний оверлей під час запису та транскрипції. На Linux рекомендовано «Немає»",
           "options": {
             "bottom": "Внизу",
@@ -89,9 +91,6 @@
     "microphone": {
       "title": "Мікрофон"
     },
-    "shortcut": {
-      "title": "Комбінації клавіш"
-    },
     "replyKeys": {
       "title": "Draft Reply Keys",
       "description": "Draft reply sends a screenshot of the chat to the first of these providers with a key. Add at least one free key. Keys are kept in the system key store, not in Chatelle's settings.",
@@ -100,6 +99,19 @@
       "save": "Save",
       "remove": "Remove",
       "saveFailed": "Could not save the key: {{error}}"
+    },
+    "tabs": {
+      "label": "Settings",
+      "shortcuts": "Shortcuts",
+      "model": "Model"
+    },
+    "groups": {
+      "keyboardShortcuts": "Keyboard shortcuts",
+      "input": "Input",
+      "recording": "Recording",
+      "overlay": "Overlay",
+      "startup": "Startup",
+      "speechModel": "Speech model"
     }
   },
   "common": {
@@ -147,7 +159,7 @@
     "missing": "Not downloaded",
     "retry": "Retry",
     "download": "Download",
-    "size": "{{size}} MB"
+    "details": "{{size}} MB · On device"
   },
   "permissions": {
     "microphone": {
@@ -170,5 +182,8 @@
     "openSettings": "Відкрити налаштування",
     "allowed": "Дозволено",
     "waiting": "Очікування"
+  },
+  "app": {
+    "tagline": "Speak. It types."
   }
 }

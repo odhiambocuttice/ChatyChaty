@@ -57,6 +57,7 @@
       "overlay": {
         "style": {
           "title": "Overlay",
+          "label": "Style",
           "description": "Välj inspelningsöverlägget: ”Ingen” döljer det, ”Minimal” visar en kompakt indikator, ”Live” visar transkriberingen i realtid medan du talar (endast modeller med streamingstöd — leta efter Streaming-märket i modellväljaren). På Linux rekommenderas ”Ingen”.",
           "options": {
             "none": "Ingen",
@@ -66,6 +67,7 @@
         },
         "position": {
           "title": "Överlagringsposition",
+          "label": "Position",
           "description": "Visa visuell återkoppling under inspelning och transkription. På Linux rekommenderas 'Ingen'.",
           "options": {
             "bottom": "Nederst",
@@ -89,9 +91,6 @@
     "microphone": {
       "title": "Mikrofon"
     },
-    "shortcut": {
-      "title": "Chatelle-kortkommandon"
-    },
     "replyKeys": {
       "title": "Draft Reply Keys",
       "description": "Draft reply sends a screenshot of the chat to the first of these providers with a key. Add at least one free key. Keys are kept in the system key store, not in Chatelle's settings.",
@@ -100,6 +99,19 @@
       "save": "Save",
       "remove": "Remove",
       "saveFailed": "Could not save the key: {{error}}"
+    },
+    "tabs": {
+      "label": "Settings",
+      "shortcuts": "Shortcuts",
+      "model": "Model"
+    },
+    "groups": {
+      "keyboardShortcuts": "Keyboard shortcuts",
+      "input": "Input",
+      "recording": "Recording",
+      "overlay": "Overlay",
+      "startup": "Startup",
+      "speechModel": "Speech model"
     }
   },
   "common": {
@@ -147,7 +159,7 @@
     "missing": "Not downloaded",
     "retry": "Retry",
     "download": "Download",
-    "size": "{{size}} MB"
+    "details": "{{size}} MB · On device"
   },
   "permissions": {
     "microphone": {
@@ -170,5 +182,8 @@
     "openSettings": "Öppna inställningar",
     "allowed": "Tillåten",
     "waiting": "Väntar"
+  },
+  "app": {
+    "tagline": "Speak. It types."
   }
 }

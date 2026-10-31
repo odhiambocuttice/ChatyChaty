@@ -57,6 +57,7 @@
       "overlay": {
         "style": {
           "title": "悬浮窗",
+          "label": "Style",
           "description": "选择录音悬浮窗的样式：「无」会隐藏悬浮窗，「精简」显示小巧的胶囊状指示，「实时」在您说话时实时显示转录内容（仅限支持流式的模型——请在模型选择器中查找「流式」标签）。在 Linux 上建议选择「无」。",
           "options": {
             "none": "无",
@@ -66,6 +67,7 @@
         },
         "position": {
           "title": "悬浮窗位置",
+          "label": "Position",
           "description": "在录制和转录期间显示可视反馈悬浮窗。在 Linux 上建议选择「无」。",
           "options": {
             "bottom": "底部",
@@ -89,9 +91,6 @@
     "microphone": {
       "title": "麦克风"
     },
-    "shortcut": {
-      "title": "Chatelle 快捷键"
-    },
     "replyKeys": {
       "title": "Draft Reply Keys",
       "description": "Draft reply sends a screenshot of the chat to the first of these providers with a key. Add at least one free key. Keys are kept in the system key store, not in Chatelle's settings.",
@@ -100,6 +99,19 @@
       "save": "Save",
       "remove": "Remove",
       "saveFailed": "Could not save the key: {{error}}"
+    },
+    "tabs": {
+      "label": "Settings",
+      "shortcuts": "Shortcuts",
+      "model": "Model"
+    },
+    "groups": {
+      "keyboardShortcuts": "Keyboard shortcuts",
+      "input": "Input",
+      "recording": "Recording",
+      "overlay": "Overlay",
+      "startup": "Startup",
+      "speechModel": "Speech model"
     }
   },
   "common": {
@@ -147,7 +159,7 @@
     "missing": "Not downloaded",
     "retry": "Retry",
     "download": "Download",
-    "size": "{{size}} MB"
+    "details": "{{size}} MB · On device"
   },
   "permissions": {
     "microphone": {
@@ -170,5 +182,8 @@
     "openSettings": "打开设置",
     "allowed": "已允许",
     "waiting": "等待中"
+  },
+  "app": {
+    "tagline": "Speak. It types."
   }
 }

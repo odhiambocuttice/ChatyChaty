@@ -57,6 +57,7 @@
       "overlay": {
         "style": {
           "title": "Overlay",
+          "label": "Style",
           "description": "Choose the recording overlay: None hides it, Minimal shows a compact pill, Live shows transcription in real time as you speak (streaming-capable models only — look for the Streaming badge in the model picker). On Linux 'None' is recommended.",
           "options": {
             "none": "None",
@@ -66,6 +67,7 @@
         },
         "position": {
           "title": "Overlay Position",
+          "label": "Position",
           "description": "Where the overlay appears on screen during recording and transcription.",
           "options": {
             "bottom": "Bottom",
@@ -89,9 +91,6 @@
     "microphone": {
       "title": "Microphone"
     },
-    "shortcut": {
-      "title": "Chatelle Shortcuts"
-    },
     "replyKeys": {
       "title": "Draft Reply Keys",
       "description": "Draft reply sends a screenshot of the chat to the first of these providers with a key. Add at least one free key. Keys are kept in the system key store, not in Chatelle's settings.",
@@ -100,6 +99,19 @@
       "save": "Save",
       "remove": "Remove",
       "saveFailed": "Could not save the key: {{error}}"
+    },
+    "tabs": {
+      "label": "Settings",
+      "shortcuts": "Shortcuts",
+      "model": "Model"
+    },
+    "groups": {
+      "keyboardShortcuts": "Keyboard shortcuts",
+      "input": "Input",
+      "recording": "Recording",
+      "overlay": "Overlay",
+      "startup": "Startup",
+      "speechModel": "Speech model"
     }
   },
   "common": {
@@ -147,7 +159,7 @@
     "missing": "Not downloaded",
     "retry": "Retry",
     "download": "Download",
-    "size": "{{size}} MB"
+    "details": "{{size}} MB · On device"
   },
   "permissions": {
     "microphone": {
@@ -170,5 +182,8 @@
     "openSettings": "Open settings",
     "allowed": "Allowed",
     "waiting": "Waiting"
+  },
+  "app": {
+    "tagline": "Speak. It types."
   }
 }

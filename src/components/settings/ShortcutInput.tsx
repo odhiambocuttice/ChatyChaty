@@ -105,23 +105,34 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
       disabled={disabled}
       layout="horizontal"
     >
-      <div className="flex items-center space-x-1">
+      <div className="flex items-center gap-2">
         {capturing ? (
           <div
             ref={shortcutRef}
-            className="px-2 py-1 text-sm font-semibold border border-logo-primary bg-logo-primary/20 rounded-md"
+            className="min-h-9 px-3.5 flex items-center text-body font-semibold border border-logo-primary bg-logo-primary/20 rounded-control"
           >
             {partial
               ? formatKeyCombination(partial, osType)
               : t("settings.general.shortcut.pressKeys")}
           </div>
         ) : (
-          <div
-            className="px-2 py-1 text-sm font-semibold bg-wash border border-line-strong hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary"
+          // One keycap per key; click any of them to record a new shortcut
+          <button
+            type="button"
+            className="flex gap-1.5 cursor-pointer rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary"
             onClick={start}
           >
-            {formatKeyCombination(binding.current_binding, osType)}
-          </div>
+            {formatKeyCombination(binding.current_binding, osType)
+              .split(" + ")
+              .map((key, i) => (
+                <span
+                  key={i}
+                  className="min-w-[52px] min-h-9 px-3 flex items-center justify-center text-body font-semibold bg-background border border-line rounded-control shadow-sm hover:border-logo-primary"
+                >
+                  {key}
+                </span>
+              ))}
+          </button>
         )}
         <ResetButton
           onClick={() => resetBinding(shortcutId)}

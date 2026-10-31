@@ -57,6 +57,7 @@
       "overlay": {
         "style": {
           "title": "Ekran Katmanı",
+          "label": "Style",
           "description": "Kayıt sırasında gösterilecek ekran katmanını seçin: 'Yok' katmanı gizler, 'Sade' küçük bir gösterge gösterir, 'Canlı' siz konuşurken transkripsiyonu gerçek zamanlı gösterir (yalnızca akış destekli modeller — model seçicide 'Akış' rozetini arayın). Linux'ta 'Yok' önerilir.",
           "options": {
             "none": "Yok",
@@ -66,6 +67,7 @@
         },
         "position": {
           "title": "Ekran Katmanı Konumu",
+          "label": "Position",
           "description": "Ekran katmanının kayıt ve transkripsiyon sırasında nerede görüneceğini belirler.",
           "options": {
             "bottom": "Alt",
@@ -89,9 +91,6 @@
     "microphone": {
       "title": "Mikrofon"
     },
-    "shortcut": {
-      "title": "Chatelle Kısayolları"
-    },
     "replyKeys": {
       "title": "Draft Reply Keys",
       "description": "Draft reply sends a screenshot of the chat to the first of these providers with a key. Add at least one free key. Keys are kept in the system key store, not in Chatelle's settings.",
@@ -100,6 +99,19 @@
       "save": "Save",
       "remove": "Remove",
       "saveFailed": "Could not save the key: {{error}}"
+    },
+    "tabs": {
+      "label": "Settings",
+      "shortcuts": "Shortcuts",
+      "model": "Model"
+    },
+    "groups": {
+      "keyboardShortcuts": "Keyboard shortcuts",
+      "input": "Input",
+      "recording": "Recording",
+      "overlay": "Overlay",
+      "startup": "Startup",
+      "speechModel": "Speech model"
     }
   },
   "common": {
@@ -147,7 +159,7 @@
     "missing": "Not downloaded",
     "retry": "Retry",
     "download": "Download",
-    "size": "{{size}} MB"
+    "details": "{{size}} MB · On device"
   },
   "permissions": {
     "microphone": {
@@ -170,5 +182,8 @@
     "openSettings": "Ayarları aç",
     "allowed": "İzin verildi",
     "waiting": "Bekleniyor"
+  },
+  "app": {
+    "tagline": "Speak. It types."
   }
 }

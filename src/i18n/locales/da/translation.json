@@ -57,6 +57,7 @@
       "overlay": {
         "style": {
           "title": "Overlay",
+          "label": "Style",
           "description": "Vælg optagelses-overlay: Ingen skjuler det, Minimal viser en kompakt pille, Live viser transskription i realtid, mens du taler (kun modeller med streaming-understøttelse — se efter Streaming-mærket i modelvælgeren). På Linux anbefales 'Ingen'.",
           "options": {
             "none": "Ingen",
@@ -66,6 +67,7 @@
         },
         "position": {
           "title": "Overlay-placering",
+          "label": "Position",
           "description": "Hvor overlayet vises på skærmen under optagelse og transskription.",
           "options": {
             "bottom": "Bund",
@@ -89,9 +91,6 @@
     "microphone": {
       "title": "Mikrofon"
     },
-    "shortcut": {
-      "title": "Chatelle-genveje"
-    },
     "replyKeys": {
       "title": "Draft Reply Keys",
       "description": "Draft reply sends a screenshot of the chat to the first of these providers with a key. Add at least one free key. Keys are kept in the system key store, not in Chatelle's settings.",
@@ -100,6 +99,19 @@
       "save": "Save",
       "remove": "Remove",
       "saveFailed": "Could not save the key: {{error}}"
+    },
+    "tabs": {
+      "label": "Settings",
+      "shortcuts": "Shortcuts",
+      "model": "Model"
+    },
+    "groups": {
+      "keyboardShortcuts": "Keyboard shortcuts",
+      "input": "Input",
+      "recording": "Recording",
+      "overlay": "Overlay",
+      "startup": "Startup",
+      "speechModel": "Speech model"
     }
   },
   "common": {
@@ -147,7 +159,7 @@
     "missing": "Not downloaded",
     "retry": "Retry",
     "download": "Download",
-    "size": "{{size}} MB"
+    "details": "{{size}} MB · On device"
   },
   "permissions": {
     "microphone": {
@@ -170,5 +182,8 @@
     "openSettings": "Åbn indstillinger",
     "allowed": "Tilladt",
     "waiting": "Venter"
+  },
+  "app": {
+    "tagline": "Speak. It types."
   }
 }

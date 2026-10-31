@@ -57,6 +57,7 @@
       "overlay": {
         "style": {
           "title": "Finestra superposada",
+          "label": "Style",
           "description": "Tria la finestra superposada d'enregistrament: Cap l'amaga, Mínima mostra un indicador compacte i En directe mostra la transcripció en temps real mentre parleu (només amb models compatibles; cerqueu el distintiu En temps real al selector de models). Al Linux es recomana Cap.",
           "options": {
             "none": "Cap",
@@ -66,6 +67,7 @@
         },
         "position": {
           "title": "Posició de la finestra superposada",
+          "label": "Position",
           "description": "On apareix la finestra superposada a la pantalla durant l'enregistrament i la transcripció.",
           "options": {
             "bottom": "A baix",
@@ -89,9 +91,6 @@
     "microphone": {
       "title": "Micròfon"
     },
-    "shortcut": {
-      "title": "Dreceres del Chatelle"
-    },
     "replyKeys": {
       "title": "Draft Reply Keys",
       "description": "Draft reply sends a screenshot of the chat to the first of these providers with a key. Add at least one free key. Keys are kept in the system key store, not in Chatelle's settings.",
@@ -100,6 +99,19 @@
       "save": "Save",
       "remove": "Remove",
       "saveFailed": "Could not save the key: {{error}}"
+    },
+    "tabs": {
+      "label": "Settings",
+      "shortcuts": "Shortcuts",
+      "model": "Model"
+    },
+    "groups": {
+      "keyboardShortcuts": "Keyboard shortcuts",
+      "input": "Input",
+      "recording": "Recording",
+      "overlay": "Overlay",
+      "startup": "Startup",
+      "speechModel": "Speech model"
     }
   },
   "common": {
@@ -147,7 +159,7 @@
     "missing": "Not downloaded",
     "retry": "Retry",
     "download": "Download",
-    "size": "{{size}} MB"
+    "details": "{{size}} MB · On device"
   },
   "permissions": {
     "microphone": {
@@ -170,5 +182,8 @@
     "openSettings": "Obre la configuració",
     "allowed": "Permès",
     "waiting": "En espera"
+  },
+  "app": {
+    "tagline": "Speak. It types."
   }
 }

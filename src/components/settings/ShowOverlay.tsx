@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Dropdown } from "../ui/Dropdown";
+import { SegmentedControl } from "../ui/SegmentedControl";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import type { OverlayPosition, OverlayStyle } from "@/bindings";
@@ -32,12 +33,12 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
 
     const positionOptions = [
       {
-        value: "bottom",
-        label: t("settings.advanced.overlay.position.options.bottom"),
-      },
-      {
         value: "top",
         label: t("settings.advanced.overlay.position.options.top"),
+      },
+      {
+        value: "bottom",
+        label: t("settings.advanced.overlay.position.options.bottom"),
       },
     ];
 
@@ -51,7 +52,7 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
     return (
       <>
         <SettingContainer
-          title={t("settings.advanced.overlay.style.title")}
+          title={t("settings.advanced.overlay.style.label")}
           description={t("settings.advanced.overlay.style.description")}
           descriptionMode={descriptionMode}
           grouped={grouped}
@@ -68,15 +69,16 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
 
         {selectedStyle !== "none" && (
           <SettingContainer
-            title={t("settings.advanced.overlay.position.title")}
+            title={t("settings.advanced.overlay.position.label")}
             description={t("settings.advanced.overlay.position.description")}
             descriptionMode={descriptionMode}
             grouped={grouped}
           >
-            <Dropdown
+            <SegmentedControl
+              ariaLabel={t("settings.advanced.overlay.position.title")}
               options={positionOptions}
-              selectedValue={selectedPosition}
-              onSelect={(value) =>
+              value={selectedPosition}
+              onChange={(value) =>
                 updateSetting("overlay_position", value as OverlayPosition)
               }
               disabled={isUpdating("overlay_position")}

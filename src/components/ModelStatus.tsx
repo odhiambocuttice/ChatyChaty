@@ -66,7 +66,12 @@ export const ModelStatus: React.FC = () => {
 
   let state: React.ReactNode;
   if (status.is_loaded) {
-    state = <span className="text-moss">{t("model.ready")}</span>;
+    state = (
+      <span className="inline-flex items-center gap-1.5 text-body font-medium text-moss">
+        <span className="size-2 rounded-full bg-moss" />
+        {t("model.ready")}
+      </span>
+    );
   } else if (status.is_downloading) {
     state = (
       <div className="flex items-center gap-3 w-full max-w-xs">
@@ -109,11 +114,13 @@ export const ModelStatus: React.FC = () => {
   }
 
   return (
-    <div className="w-full rounded-lg border border-line px-4 py-3 flex items-center justify-between gap-4 text-sm">
+    <div className="w-full py-4 flex flex-wrap items-center justify-between gap-4 text-sm">
       <div>
-        <b className="block font-semibold">{status.name}</b>
-        <span className="text-ink-3">
-          {t("model.size", { size: status.size_mb })}
+        <b className="block text-row font-semibold tracking-[-0.01em]">
+          {status.name}
+        </b>
+        <span className="mt-0.5 block text-ink-3">
+          {t("model.details", { size: status.size_mb })}
         </span>
       </div>
       {state}
