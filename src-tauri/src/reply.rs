@@ -421,7 +421,7 @@ fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
             .status()
             .map_err(|e| format!("Could not run screencapture: {e}"))?;
         if !captured.success() {
-            return Err("screencapture failed. Allow Screen Recording for Handy.".to_string());
+            return Err("screencapture failed. Allow Screen Recording for Chatelle.".to_string());
         }
         let resized = Command::new("sips")
             .args(["-Z", &SCREENSHOT_MAX_SIDE_PX.to_string()])
@@ -434,7 +434,9 @@ fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
         let bytes =
             std::fs::read(&path).map_err(|e| format!("Could not read the screenshot: {e}"))?;
         if bytes.is_empty() {
-            return Err("The screenshot is empty. Allow Screen Recording for Handy.".to_string());
+            return Err(
+                "The screenshot is empty. Allow Screen Recording for Chatelle.".to_string(),
+            );
         }
         Ok(bytes)
     })();

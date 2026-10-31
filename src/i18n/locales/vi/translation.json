@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Phím tắt Handy",
+        "title": "Phím tắt Chatelle",
         "description": "Cấu hình phím tắt để kích hoạt ghi âm chuyển đổi giọng nói thành văn bản",
         "loading": "Đang tải phím tắt...",
         "none": "Chưa cấu hình phím tắt",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Phím tắt hủy",
             "description": "Phím tắt để hủy bản ghi hiện tại."
+          },
+          "draft_reply": {
+            "name": "Soạn thảo trả lời",
+            "description": "Đọc cuộc trò chuyện trên màn hình và gõ câu trả lời vào ô nhập đang chọn."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Khởi động cùng hệ thống",
-        "description": "Tự động khởi động Handy khi bạn đăng nhập vào máy tính."
+        "description": "Tự động khởi động Chatelle khi bạn đăng nhập vào máy tính."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Micrô"
     },
     "shortcut": {
-      "title": "Phím tắt Handy"
+      "title": "Phím tắt Chatelle"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Micrô",
-      "why": "Để Handy nghe được bạn. Âm thanh được chuyển thành văn bản ngay trên máy tính này và không bao giờ được tải lên."
+      "why": "Để Chatelle nghe được bạn. Âm thanh được chuyển thành văn bản ngay trên máy tính này và không bao giờ được tải lên."
     },
     "accessibility": {
       "name": "Trợ năng",
-      "why": "Để phím tắt của bạn hoạt động trong mọi ứng dụng, và Handy có thể gõ văn bản vào nơi con trỏ của bạn đang đứng."
+      "why": "Để phím tắt của bạn hoạt động trong mọi ứng dụng, và Chatelle có thể gõ văn bản vào nơi con trỏ của bạn đang đứng."
     },
     "errors": {
       "checkFailed": "Không thể kiểm tra quyền. Vui lòng thử lại.",

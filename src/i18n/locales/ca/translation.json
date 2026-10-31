@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Dreceres del Handy",
+        "title": "Dreceres del Chatelle",
         "description": "Configura les dreceres de teclat per iniciar l'enregistrament de veu per a la transcripció",
         "loading": "S'estan carregant les dreceres...",
         "none": "No hi ha cap drecera configurada",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Drecera de cancel·lació",
             "description": "La drecera de teclat per cancel·lar l'enregistrament actual."
+          },
+          "draft_reply": {
+            "name": "Redacta una resposta",
+            "description": "Llegeix el xat en pantalla i escriu una resposta al camp actiu."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Inicia en entrar a la sessió",
-        "description": "Inicia automàticament el Handy quan entreu a la sessió de l'ordinador."
+        "description": "Inicia automàticament el Chatelle quan entreu a la sessió de l'ordinador."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Micròfon"
     },
     "shortcut": {
-      "title": "Dreceres del Handy"
+      "title": "Dreceres del Chatelle"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Micròfon",
-      "why": "Perquè el Handy us pugui sentir. L'àudio es converteix en text en aquest ordinador i no es puja mai enlloc."
+      "why": "Perquè el Chatelle us pugui sentir. L'àudio es converteix en text en aquest ordinador i no es puja mai enlloc."
     },
     "accessibility": {
       "name": "Accessibilitat",
-      "why": "Perquè la drecera funcioni a totes les aplicacions i el Handy pugui escriure el text on tingueu el cursor."
+      "why": "Perquè la drecera funcioni a totes les aplicacions i el Chatelle pugui escriure el text on tingueu el cursor."
     },
     "errors": {
       "checkFailed": "No s'han pogut comprovar els permisos. Torneu-ho a provar.",

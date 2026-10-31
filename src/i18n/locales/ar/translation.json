@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "اختصارات Handy",
+        "title": "اختصارات Chatelle",
         "description": "إعداد اختصارات لوحة المفاتيح لبدء تسجيل التفريغ الصوتي",
         "loading": "جاري تحميل الاختصارات...",
         "none": "لا توجد اختصارات مجهزة",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "اختصار الإلغاء",
             "description": ".اختصار لوحة المفاتيح لإلغاء التسجيل الحالي"
+          },
+          "draft_reply": {
+            "name": "صياغة رد",
+            "description": "يقرأ المحادثة على الشاشة ويكتب رداً في حقل الإدخال النشط."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "التشغيل عند بدء التشغيل",
-        "description": ".بدء تشغيل Handy تلقائياً عند تسجيل الدخول إلى جهاز الكمبيوتر الخاص بك"
+        "description": ".بدء تشغيل Chatelle تلقائياً عند تسجيل الدخول إلى جهاز الكمبيوتر الخاص بك"
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "الميكروفون"
     },
     "shortcut": {
-      "title": "اختصارات Handy"
+      "title": "اختصارات Chatelle"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "الميكروفون",
-      "why": "ليتمكن Handy من سماعك. يُحوَّل الصوت إلى نص على هذا الكمبيوتر ولا يُرفع أبدًا."
+      "why": "ليتمكن Chatelle من سماعك. يُحوَّل الصوت إلى نص على هذا الكمبيوتر ولا يُرفع أبدًا."
     },
     "accessibility": {
       "name": "إمكانية الوصول",
-      "why": "ليعمل اختصارك في كل التطبيقات، ويتمكن Handy من كتابة النص حيث يوجد المؤشر."
+      "why": "ليعمل اختصارك في كل التطبيقات، ويتمكن Chatelle من كتابة النص حيث يوجد المؤشر."
     },
     "errors": {
       "checkFailed": "فشل التحقق من الأذونات. يرجير المحاولة مرة أخرى.",

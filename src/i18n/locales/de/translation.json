@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Handy-Tastenkürzel",
+        "title": "Chatelle-Tastenkürzel",
         "description": "Tastenkürzel für die Sprachaufnahme konfigurieren",
         "loading": "Tastenkürzel werden geladen...",
         "none": "Keine Tastenkürzel konfiguriert",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Abbrechen-Tastenkürzel",
             "description": "Das Tastenkürzel zum Abbrechen der aktuellen Aufnahme."
+          },
+          "draft_reply": {
+            "name": "Antwort entwerfen",
+            "description": "Liest den Chat auf dem Bildschirm und tippt eine Antwort in das aktive Eingabefeld."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Beim Start ausführen",
-        "description": "Handy automatisch beim Anmelden starten."
+        "description": "Chatelle automatisch beim Anmelden starten."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Mikrofon"
     },
     "shortcut": {
-      "title": "Handy-Tastenkürzel"
+      "title": "Chatelle-Tastenkürzel"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Mikrofon",
-      "why": "Damit Handy dich hören kann. Audio wird auf diesem Computer in Text umgewandelt und nie hochgeladen."
+      "why": "Damit Chatelle dich hören kann. Audio wird auf diesem Computer in Text umgewandelt und nie hochgeladen."
     },
     "accessibility": {
       "name": "Bedienungshilfen",
-      "why": "Damit dein Tastenkürzel in jeder App funktioniert und Handy den Text dort eintippen kann, wo dein Cursor steht."
+      "why": "Damit dein Tastenkürzel in jeder App funktioniert und Chatelle den Text dort eintippen kann, wo dein Cursor steht."
     },
     "errors": {
       "checkFailed": "Berechtigungsprüfung fehlgeschlagen. Bitte erneut versuchen.",

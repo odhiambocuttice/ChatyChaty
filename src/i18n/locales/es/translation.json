@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Atajos de Handy",
+        "title": "Atajos de Chatelle",
         "description": "Configura atajos de teclado para activar la grabación de voz a texto",
         "loading": "Cargando atajos...",
         "none": "No hay atajos configurados",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Atajo de cancelar",
             "description": "El atajo de teclado para cancelar la grabación actual."
+          },
+          "draft_reply": {
+            "name": "Redactar respuesta",
+            "description": "Lee el chat en pantalla y escribe una respuesta en el campo activo."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Iniciar al arranque",
-        "description": "Iniciar Handy automáticamente cuando inicies sesión en tu computadora."
+        "description": "Iniciar Chatelle automáticamente cuando inicies sesión en tu computadora."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Micrófono"
     },
     "shortcut": {
-      "title": "Atajos de Handy"
+      "title": "Atajos de Chatelle"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Micrófono",
-      "why": "Para que Handy pueda escucharte. El audio se convierte en texto en este equipo y nunca se sube a ninguna parte."
+      "why": "Para que Chatelle pueda escucharte. El audio se convierte en texto en este equipo y nunca se sube a ninguna parte."
     },
     "accessibility": {
       "name": "Accesibilidad",
-      "why": "Para que tu atajo funcione en cualquier app y Handy pueda escribir el texto donde está tu cursor."
+      "why": "Para que tu atajo funcione en cualquier app y Chatelle pueda escribir el texto donde está tu cursor."
     },
     "errors": {
       "checkFailed": "Error al verificar permisos. Por favor, inténtalo de nuevo.",

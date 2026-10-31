@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Scorciatoie di Handy",
+        "title": "Scorciatoie di Chatelle",
         "description": "Configura le scorciatoie per attivare la trascrizione vocale",
         "loading": "Caricamento delle scorciatoie...",
         "none": "Nessuna scorciatoia configurata",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Scorciatoia Annulla",
             "description": "La scorciatoia da tastiera per annullare la registrazione in corso."
+          },
+          "draft_reply": {
+            "name": "Bozza di risposta",
+            "description": "Legge la chat sullo schermo e digita una risposta nel campo attivo."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Avvia all'Accensione",
-        "description": "Avvia Handy automaticamente quando accedi al computer."
+        "description": "Avvia Chatelle automaticamente quando accedi al computer."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Microfono"
     },
     "shortcut": {
-      "title": "Scorciatoie di Handy"
+      "title": "Scorciatoie di Chatelle"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Microfono",
-      "why": "Così Handy può sentirti. L'audio viene trasformato in testo su questo computer e non viene mai caricato online."
+      "why": "Così Chatelle può sentirti. L'audio viene trasformato in testo su questo computer e non viene mai caricato online."
     },
     "accessibility": {
       "name": "Accessibilità",
-      "why": "Così la tua scorciatoia funziona in ogni app e Handy può scrivere il testo dove si trova il cursore."
+      "why": "Così la tua scorciatoia funziona in ogni app e Chatelle può scrivere il testo dove si trova il cursore."
     },
     "errors": {
       "checkFailed": "Impossibile verificare i permessi. Riprova.",
