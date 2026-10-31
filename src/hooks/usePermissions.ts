@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { platform } from "@tauri-apps/plugin-os";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   checkAccessibilityPermission,
   checkMicrophonePermission,
@@ -9,6 +10,7 @@ import {
 } from "tauri-plugin-macos-permissions-api";
 import { toast } from "sonner";
 import { commands } from "@/bindings";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export type PermissionStatus = "checking" | "needed" | "waiting" | "granted";
 export type PermissionPlatform = "macos" | "windows" | "other";
@@ -27,6 +29,12 @@ export interface Permissions {
 }
 
 const POLL_INTERVAL_MS = 1000;
+// No answer seen this long after asking: offer the button again.
+const WAITING_TIMEOUT_MS = 15_000;
+// Back in front: give macOS a moment to record the answer before reading it.
+const FOCUS_SETTLE_MS = 500;
+
+type PermissionRowName = "microphone" | "accessibility";
 
 const currentPlatform = (): PermissionPlatform => {
   const p = platform();
@@ -55,12 +63,41 @@ const readPermissions = async (
 };
 
 /**
+ * While a row waits: recheck it when Chatelle comes back to the front, and once
+ * after WAITING_TIMEOUT_MS if Chatelle is in front then (away in Settings, the
+ * row keeps waiting).
+ */
+const useRecheckWhileWaiting = (
+  waiting: boolean,
+  recheck: () => void,
+): void => {
+  useEffect(() => {
+    if (!waiting) return;
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const unlisten = getCurrentWindow().onFocusChanged(({ payload }) => {
+      if (!payload) return;
+      clearTimeout(settle);
+      settle = setTimeout(recheck, FOCUS_SETTLE_MS);
+    });
+    const timer = setTimeout(() => {
+      if (document.hasFocus()) recheck();
+    }, WAITING_TIMEOUT_MS);
+    return () => {
+      clearTimeout(settle);
+      clearTimeout(timer);
+      unlisten.then((off) => off());
+    };
+  }, [waiting, recheck]);
+};
+
+/**
  * Microphone and accessibility permissions: check, request, then poll until
  * granted. Granting accessibility initializes typing and shortcuts, so no
  * relaunch is needed.
  */
 export const usePermissions = (): Permissions => {
   const { t } = useTranslation();
+  const refreshAudioDevices = useSettingsStore((s) => s.refreshAudioDevices);
   const [os] = useState(currentPlatform);
   const [microphone, setMicrophone] = useState<PermissionStatus>("checking");
   const [accessibility, setAccessibility] =
@@ -98,6 +135,47 @@ export const usePermissions = (): Permissions => {
     [],
   );
 
+  // Allowed while Chatelle runs: list the microphones now. At launch, App
+  // lists them once everything is allowed.
+  const previousMicrophone = useRef(microphone);
+  useEffect(() => {
+    const previous = previousMicrophone.current;
+    previousMicrophone.current = microphone;
+    if (
+      microphone === "granted" &&
+      previous !== "granted" &&
+      previous !== "checking"
+    ) {
+      refreshAudioDevices().catch((e) =>
+        console.warn("Failed to refresh audio devices:", e),
+      );
+    }
+  }, [microphone, refreshAudioDevices]);
+
+  // A waiting row whose answer was no (or never came): offer the button again.
+  const recheckWaiting = useCallback(
+    async (row: PermissionRowName) => {
+      try {
+        const granted = (await readPermissions(os))[row];
+        const setRow = row === "microphone" ? setMicrophone : setAccessibility;
+        setRow((prev) =>
+          prev === "waiting" ? (granted ? "granted" : "needed") : prev,
+        );
+      } catch (error) {
+        console.warn("Failed to recheck permissions:", error);
+      }
+    },
+    [os],
+  );
+  const recheckMicrophone = useCallback(
+    () => recheckWaiting("microphone"),
+    [recheckWaiting],
+  );
+  const recheckAccessibility = useCallback(
+    () => recheckWaiting("accessibility"),
+    [recheckWaiting],
+  );
+
   const startPolling = useCallback(() => {
     if (pollingRef.current) return;
     pollingRef.current = setInterval(async () => {
@@ -121,9 +199,19 @@ export const usePermissions = (): Permissions => {
         setMicrophone("needed");
         setAccessibility("needed");
       });
+    // Asked in an earlier run: the button opens System Settings.
+    if (os === "macos") {
+      commands
+        .getMacosMicrophoneStatus()
+        .then((status) => setMicrophoneAsked(status !== "not_determined"))
+        .catch((e) => console.warn("Failed to read microphone status:", e));
+    }
     return stopPolling;
     // The first check runs once.
   }, []);
+
+  useRecheckWhileWaiting(microphone === "waiting", recheckMicrophone);
+  useRecheckWhileWaiting(accessibility === "waiting", recheckAccessibility);
 
   const requestAccessibility = async () => {
     try {
@@ -138,11 +226,15 @@ export const usePermissions = (): Permissions => {
 
   const requestMicrophone = async () => {
     try {
-      // macOS prompts once; after that, only System Settings can allow it.
-      if (os === "windows" || microphoneAsked) {
-        await commands.openMicrophonePrivacySettings();
-      } else {
+      // macOS prompts only while it has no answer; after that, only System
+      // Settings can allow it.
+      const canPrompt =
+        os === "macos" &&
+        (await commands.getMacosMicrophoneStatus()) === "not_determined";
+      if (canPrompt) {
         await requestMicrophonePermission();
+      } else {
+        await commands.openMicrophonePrivacySettings();
       }
       setMicrophoneAsked(true);
       setMicrophone("waiting");

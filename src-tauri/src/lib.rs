@@ -457,6 +457,7 @@ pub fn run(cli_args: CliArgs) {
             commands::audio::update_microphone_mode,
             commands::audio::get_microphone_mode,
             commands::audio::get_windows_microphone_permission_status,
+            commands::audio::get_macos_microphone_status,
             commands::audio::open_microphone_privacy_settings,
             commands::audio::get_available_microphones,
             commands::audio::set_selected_microphone,

@@ -358,6 +358,9 @@ async getMicrophoneMode() : Promise<Result<boolean, string>> {
 async getWindowsMicrophonePermissionStatus() : Promise<WindowsMicrophonePermissionStatus> {
     return await TAURI_INVOKE("get_windows_microphone_permission_status");
 },
+async getMacosMicrophoneStatus() : Promise<MacosMicrophoneStatus> {
+    return await TAURI_INVOKE("get_macos_microphone_status");
+},
 async openMicrophonePrivacySettings() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("open_microphone_privacy_settings") };
@@ -547,6 +550,12 @@ export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_
 key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+/**
+ * macOS microphone access as AVFoundation reports it. macOS shows its prompt
+ * only while the status is `NotDetermined`; after that, only System Settings
+ * can change it.
+ */
+export type MacosMicrophoneStatus = "not_determined" | "restricted" | "denied" | "authorized" | "unsupported"
 /**
  * What the settings window shows about the one model.
  */
