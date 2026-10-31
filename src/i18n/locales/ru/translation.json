@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Ярлыки Handy",
+        "title": "Ярлыки Chatelle",
         "description": "Настройте сочетания клавиш для запуска записи речи в текст",
         "loading": "Загрузка ярлыков...",
         "none": "Ярлыки не настроены",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Горячая клавиша отмены",
             "description": "Сочетание клавиш для отмены текущей записи."
+          },
+          "draft_reply": {
+            "name": "Черновик ответа",
+            "description": "Читает чат на экране и вводит ответ в активное поле ввода."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Запускать при старте",
-        "description": "Автоматически запускать Handy при входе в систему."
+        "description": "Автоматически запускать Chatelle при входе в систему."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Микрофон"
     },
     "shortcut": {
-      "title": "Ярлыки Handy"
+      "title": "Ярлыки Chatelle"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Микрофон",
-      "why": "Чтобы Handy мог вас слышать. Звук превращается в текст на этом компьютере и никуда не отправляется."
+      "why": "Чтобы Chatelle мог вас слышать. Звук превращается в текст на этом компьютере и никуда не отправляется."
     },
     "accessibility": {
       "name": "Универсальный доступ",
-      "why": "Чтобы сочетание клавиш работало в любом приложении, а Handy мог печатать текст там, где стоит курсор."
+      "why": "Чтобы сочетание клавиш работало в любом приложении, а Chatelle мог печатать текст там, где стоит курсор."
     },
     "errors": {
       "checkFailed": "Не удалось проверить разрешения. Пожалуйста, попробуйте снова.",

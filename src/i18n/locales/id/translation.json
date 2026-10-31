@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Pintasan Handy",
+        "title": "Pintasan Chatelle",
         "description": "Atur pintasan keyboard untuk memulai perekaman ucapan-ke-teks",
         "loading": "Memuat pintasan...",
         "none": "Belum ada pintasan yang diatur",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Pintasan Batal",
             "description": "Pintasan keyboard untuk membatalkan perekaman saat ini."
+          },
+          "draft_reply": {
+            "name": "Susun Balasan",
+            "description": "Membaca obrolan di layar dan mengetikkan balasan ke kolom input aktif."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Jalankan saat Komputer Dinyalakan",
-        "description": "Mulai Handy secara otomatis saat Anda masuk ke komputer."
+        "description": "Mulai Chatelle secara otomatis saat Anda masuk ke komputer."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Mikrofon"
     },
     "shortcut": {
-      "title": "Pintasan Handy"
+      "title": "Pintasan Chatelle"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Mikrofon",
-      "why": "Agar Handy dapat mendengar Anda. Audio diubah menjadi teks di komputer ini dan tidak pernah diunggah."
+      "why": "Agar Chatelle dapat mendengar Anda. Audio diubah menjadi teks di komputer ini dan tidak pernah diunggah."
     },
     "accessibility": {
       "name": "Aksesibilitas",
-      "why": "Agar pintasan Anda berfungsi di semua aplikasi, dan Handy dapat mengetik teks di tempat kursor Anda berada."
+      "why": "Agar pintasan Anda berfungsi di semua aplikasi, dan Chatelle dapat mengetik teks di tempat kursor Anda berada."
     },
     "errors": {
       "checkFailed": "Gagal memeriksa izin. Silakan coba lagi.",

@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Handy Shortcuts",
+        "title": "Chatelle Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Cancel Shortcut",
             "description": "The keyboard shortcut to cancel the current recording."
+          },
+          "draft_reply": {
+            "name": "Draft Reply",
+            "description": "Reads the chat on screen and types a reply into the focused input."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Launch on Startup",
-        "description": "Automatically start Handy when you log in to your computer."
+        "description": "Automatically start Chatelle when you log in to your computer."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Microphone"
     },
     "shortcut": {
-      "title": "Handy Shortcuts"
+      "title": "Chatelle Shortcuts"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Microphone",
-      "why": "So Handy can hear you. Audio is turned into text on this computer and never uploaded."
+      "why": "So Chatelle can hear you. Audio is turned into text on this computer and never uploaded."
     },
     "accessibility": {
       "name": "Accessibility",
-      "why": "So your shortcut works in every app, and Handy can type the text where your cursor is."
+      "why": "So your shortcut works in every app, and Chatelle can type the text where your cursor is."
     },
     "errors": {
       "checkFailed": "Failed to check permissions. Please try again.",

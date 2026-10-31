@@ -38,11 +38,11 @@ The service should show `active (running)` and the test should type into the foc
 
 ## 3. Configure Handy
 
-Edit Handy's settings with:
+Edit Chatelle's settings with:
 
 ```bash
-sed -i 's/"typing_tool": "auto"/"typing_tool": "ydotool"/' ~/.local/share/com.pais.handy/settings_store.json
-sed -i 's/"keyboard_implementation": "tauri"/"keyboard_implementation": "handy_keys"/' ~/.local/share/com.pais.handy/settings_store.json
+sed -i 's/"typing_tool": "auto"/"typing_tool": "ydotool"/' ~/.local/share/com.odhiambocuttice.chatelle/settings_store.json
+sed -i 's/"keyboard_implementation": "tauri"/"keyboard_implementation": "handy_keys"/' ~/.local/share/com.odhiambocuttice.chatelle/settings_store.json
 ```
 
 Restart Handy:

@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Handy 快捷键",
+        "title": "Chatelle 快捷键",
         "description": "配置启动语音转文字录制的键盘快捷键",
         "loading": "加载快捷键中...",
         "none": "未配置快捷键",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "取消快捷键",
             "description": "用于取消当前录制的键盘快捷键。"
+          },
+          "draft_reply": {
+            "name": "起草回复",
+            "description": "读取屏幕上的聊天内容并在当前输入框中输入回复。"
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "开机启动",
-        "description": "登录计算机时自动启动 Handy。"
+        "description": "登录计算机时自动启动 Chatelle。"
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "麦克风"
     },
     "shortcut": {
-      "title": "Handy 快捷键"
+      "title": "Chatelle 快捷键"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "麦克风",
-      "why": "这样 Handy 才能听到您说话。音频只在这台电脑上转成文字，绝不会上传。"
+      "why": "这样 Chatelle 才能听到您说话。音频只在这台电脑上转成文字，绝不会上传。"
     },
     "accessibility": {
       "name": "辅助功能",
-      "why": "这样快捷键在每个应用中都能使用，Handy 也能把文字输入到光标所在的位置。"
+      "why": "这样快捷键在每个应用中都能使用，Chatelle 也能把文字输入到光标所在的位置。"
     },
     "errors": {
       "checkFailed": "检查权限失败。请重试。",

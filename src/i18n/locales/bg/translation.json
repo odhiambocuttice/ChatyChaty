@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Бързи клавиши на Handy",
+        "title": "Бързи клавиши на Chatelle",
         "description": "Настройте клавишни комбинации за стартиране на запис за реч към текст",
         "loading": "Зареждане на бързите клавиши...",
         "none": "Няма настроени бързи клавиши",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Бърз клавиш за отказ",
             "description": "Клавишната комбинация за отмяна на текущия запис."
+          },
+          "draft_reply": {
+            "name": "Чернова на отговор",
+            "description": "Чете чата на екрана и въвежда отговор в активното поле."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Стартиране със системата",
-        "description": "Автоматично стартиране на Handy при влизане в профила ви."
+        "description": "Автоматично стартиране на Chatelle при влизане в профила ви."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Микрофон"
     },
     "shortcut": {
-      "title": "Бързи клавиши на Handy"
+      "title": "Бързи клавиши на Chatelle"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Микрофон",
-      "why": "За да може Handy да ви чува. Звукът се превръща в текст на този компютър и никога не се качва никъде."
+      "why": "За да може Chatelle да ви чува. Звукът се превръща в текст на този компютър и никога не се качва никъде."
     },
     "accessibility": {
       "name": "Достъпност",
-      "why": "За да работи бързият ви клавиш във всяко приложение и Handy да въвежда текста там, където е курсорът ви."
+      "why": "За да работи бързият ви клавиш във всяко приложение и Chatelle да въвежда текста там, където е курсорът ви."
     },
     "errors": {
       "checkFailed": "Проверката на разрешенията не бе успешна. Опитайте отново.",

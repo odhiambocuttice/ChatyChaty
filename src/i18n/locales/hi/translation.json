@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Handy शॉर्टकट",
+        "title": "Chatelle शॉर्टकट",
         "description": "स्पीच-टू-टेक्स्ट रिकॉर्डिंग शुरू करने के लिए कीबोर्ड शॉर्टकट सेट करें",
         "loading": "शॉर्टकट लोड हो रहे हैं...",
         "none": "कोई शॉर्टकट सेट नहीं है",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "रद्द करने का शॉर्टकट",
             "description": "मौजूदा रिकॉर्डिंग रद्द करने के लिए कीबोर्ड शॉर्टकट."
+          },
+          "draft_reply": {
+            "name": "उत्तर तैयार करें",
+            "description": "स्क्रीन पर चैट पढ़ता है और सक्रिय इनपुट में उत्तर टाइप करता है।"
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "स्टार्टअप पर लॉन्च करें",
-        "description": "कंप्यूटर में लॉग इन करने पर Handy अपने आप शुरू हो जाए."
+        "description": "कंप्यूटर में लॉग इन करने पर Chatelle अपने आप शुरू हो जाए."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "माइक्रोफ़ोन"
     },
     "shortcut": {
-      "title": "Handy शॉर्टकट"
+      "title": "Chatelle शॉर्टकट"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "माइक्रोफ़ोन",
-      "why": "ताकि Handy आपको सुन सके. ऑडियो इसी कंप्यूटर पर टेक्स्ट में बदलता है और कभी अपलोड नहीं होता."
+      "why": "ताकि Chatelle आपको सुन सके. ऑडियो इसी कंप्यूटर पर टेक्स्ट में बदलता है और कभी अपलोड नहीं होता."
     },
     "accessibility": {
       "name": "एक्सेसिबिलिटी",
-      "why": "ताकि आपका शॉर्टकट हर ऐप में चले और Handy टेक्स्ट वहीं टाइप कर सके जहां आपका कर्सर है."
+      "why": "ताकि आपका शॉर्टकट हर ऐप में चले और Chatelle टेक्स्ट वहीं टाइप कर सके जहां आपका कर्सर है."
     },
     "errors": {
       "checkFailed": "अनुमतियां जांची नहीं जा सकीं. कृपया फिर से कोशिश करें.",

@@ -137,13 +137,13 @@ Local builds use the ad-hoc `signingIdentity: "-"`. A rebuild can have a new mac
 identity while the old **System Settings > Privacy & Security > Accessibility** entry
 remains visibly enabled, leaving Handy on `Waiting...`.
 
-After installing the final bundle at `/Applications/Handy.app`, quit Handy, clear only its
+After installing the final bundle at `/Applications/Chatelle.app`, quit Chatelle, clear only its
 stale Accessibility record, then reopen it:
 
 ```bash
-osascript -e 'tell application id "com.pais.handy" to quit' || true
-tccutil reset Accessibility com.pais.handy
-open /Applications/Handy.app
+osascript -e 'tell application id "com.odhiambocuttice.chatelle" to quit' || true
+tccutil reset Accessibility com.odhiambocuttice.chatelle
+open /Applications/Chatelle.app
 ```
 
 Grant Accessibility again when prompted. This does not reset Microphone or other TCC
@@ -153,8 +153,8 @@ For optional diagnosis, compare the designated requirements of the previous and 
 bundles:
 
 ```bash
-codesign -dr - /path/to/previous/Handy.app 2>&1
-codesign -dr - /Applications/Handy.app 2>&1
+codesign -dr - /path/to/previous/Chatelle.app 2>&1
+codesign -dr - /Applications/Chatelle.app 2>&1
 ```
 
 An ad-hoc requirement contains a `cdhash`; a changed requirement confirms the rebuild is

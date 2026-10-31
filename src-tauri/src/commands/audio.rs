@@ -135,6 +135,53 @@ pub fn get_windows_microphone_permission_status() -> WindowsMicrophonePermission
     }
 }
 
+/// macOS microphone access as AVFoundation reports it. macOS shows its prompt
+/// only while the status is `NotDetermined`; after that, only System Settings
+/// can change it.
+#[derive(Serialize, Type, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MacosMicrophoneStatus {
+    NotDetermined,
+    Restricted,
+    Denied,
+    Authorized,
+    /// Not macOS.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    Unsupported,
+}
+
+// AVCaptureDevice lives in AVFoundation; link it so the class is always there.
+#[cfg(target_os = "macos")]
+#[link(name = "AVFoundation", kind = "framework")]
+extern "C" {}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_macos_microphone_status() -> MacosMicrophoneStatus {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        // AVMediaTypeAudio is the string "soun".
+        let status: isize = unsafe {
+            let media_type: *mut AnyObject =
+                msg_send![class!(NSString), stringWithUTF8String: c"soun".as_ptr()];
+            msg_send![class!(AVCaptureDevice), authorizationStatusForMediaType: media_type]
+        };
+        match status {
+            0 => MacosMicrophoneStatus::NotDetermined,
+            1 => MacosMicrophoneStatus::Restricted,
+            2 => MacosMicrophoneStatus::Denied,
+            _ => MacosMicrophoneStatus::Authorized,
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        MacosMicrophoneStatus::Unsupported
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn open_microphone_privacy_settings() -> Result<(), String> {
@@ -389,4 +436,18 @@ pub async fn set_selected_channel(app: AppHandle, channel: Option<u16>) -> Resul
     settings.selected_channel = channel;
     write_settings(&app, settings);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_reports_a_real_microphone_status() {
+        assert_ne!(
+            get_macos_microphone_status(),
+            MacosMicrophoneStatus::Unsupported
+        );
+    }
 }

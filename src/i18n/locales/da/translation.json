@@ -8,7 +8,7 @@
   "settings": {
     "general": {
       "shortcut": {
-        "title": "Handy-genveje",
+        "title": "Chatelle-genveje",
         "description": "Konfigurer tastaturgenveje til at udløse tale-til-tekst-optagelse",
         "loading": "Indlæser genveje...",
         "none": "Ingen genveje konfigureret",
@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Annulleringsgenvej",
             "description": "Tastaturgenvejen til at annullere den aktuelle optagelse."
+          },
+          "draft_reply": {
+            "name": "Skriv udkast til svar",
+            "description": "Læser chatten på skærmen og skriver et svar i det aktive felt."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Start ved opstart",
-        "description": "Start Handy automatisk, når du logger ind på din computer."
+        "description": "Start Chatelle automatisk, når du logger ind på din computer."
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -86,7 +90,7 @@
       "title": "Mikrofon"
     },
     "shortcut": {
-      "title": "Handy-genveje"
+      "title": "Chatelle-genveje"
     }
   },
   "common": {
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Mikrofon",
-      "why": "Så Handy kan høre dig. Lyd bliver omdannet til tekst på denne computer og uploades aldrig."
+      "why": "Så Chatelle kan høre dig. Lyd bliver omdannet til tekst på denne computer og uploades aldrig."
     },
     "accessibility": {
       "name": "Hjælpemidler",
-      "why": "Så din genvej virker i alle apps, og Handy kan skrive teksten dér, hvor din markør er."
+      "why": "Så din genvej virker i alle apps, og Chatelle kan skrive teksten dér, hvor din markør er."
     },
     "errors": {
       "checkFailed": "Kunne ikke tjekke tilladelser. Prøv igen.",

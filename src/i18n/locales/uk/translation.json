@@ -22,6 +22,10 @@
           "cancel": {
             "name": "Гаряча клавіша скасування",
             "description": "Комбінація клавіш для скасування поточного запису."
+          },
+          "draft_reply": {
+            "name": "Чернетка відповіді",
+            "description": "Читає чат на екрані та вводить відповідь у активне поле."
           }
         },
         "errors": {
@@ -48,7 +52,7 @@
       },
       "autostart": {
         "label": "Запуск при старті системи",
-        "description": "Автоматично запускати Handy при вході в систему"
+        "description": "Автоматично запускати Chatelle при вході в систему"
       },
       "overlay": {
         "style": {
@@ -74,7 +78,7 @@
       "title": "Basics",
       "typingSpeed": {
         "title": "Typing Speed",
-        "description": "How fast Handy types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
+        "description": "How fast Chatelle types your text. Normal suits most apps. Slow looks most like a person typing; Fast finishes long replies sooner.",
         "options": {
           "slow": "Slow",
           "normal": "Normal",
@@ -139,11 +143,11 @@
   "permissions": {
     "microphone": {
       "name": "Мікрофон",
-      "why": "Щоб Handy міг вас чути. Звук перетворюється на текст на цьому комп'ютері й нікуди не надсилається."
+      "why": "Щоб Chatelle міг вас чути. Звук перетворюється на текст на цьому комп'ютері й нікуди не надсилається."
     },
     "accessibility": {
       "name": "Універсальний доступ",
-      "why": "Щоб ваша комбінація клавіш працювала в усіх програмах, а Handy міг вводити текст там, де стоїть курсор."
+      "why": "Щоб ваша комбінація клавіш працювала в усіх програмах, а Chatelle міг вводити текст там, де стоїть курсор."
     },
     "errors": {
       "checkFailed": "Не вдалося перевірити дозволи. Будь ласка, спробуйте ще раз.",
