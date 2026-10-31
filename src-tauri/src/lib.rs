@@ -454,6 +454,8 @@ pub fn run(cli_args: CliArgs) {
             commands::initialize_enigo,
             commands::initialize_shortcuts,
             commands::models::get_model_status,
+            commands::models::get_speech_models,
+            commands::models::change_speech_model_setting,
             commands::models::download_model,
             commands::models::cancel_download,
             commands::audio::update_microphone_mode,

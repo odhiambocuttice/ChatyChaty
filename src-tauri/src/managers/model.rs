@@ -1,9 +1,11 @@
-//! The one transcription model this build uses, and how it gets onto disk.
+//! The transcription models this build can use, and how they get onto disk.
 //!
-//! The model is pinned to a Hugging Face file. It is looked up in the shared
-//! Hugging Face cache (where other tools may already have put it) and in
-//! Handy's own models directory, and downloaded into the cache if missing.
+//! Each model is pinned to a Hugging Face file. The one picked in settings is
+//! looked up in the shared Hugging Face cache (where other tools may already
+//! have put it) and in Handy's own models directory, and downloaded into the
+//! cache if missing.
 
+use crate::settings::{self, SpeechModel};
 use anyhow::Result;
 use hf_hub::api::tokio::{ApiBuilder, CancellationToken, Progress};
 use hf_hub::{Cache, Repo, RepoType};
@@ -18,16 +20,47 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
-/// Hugging Face repository the model file lives in.
-pub const MODEL_REPO: &str = "handy-computer/parakeet-unified-en-0.6b-gguf";
-/// Commit the file is pinned to, so the downloaded bytes are the tested ones.
-pub const MODEL_REVISION: &str = "7e948f21b7bdbac698d3318db9d350f1096f3b6c";
-/// The file within the repository.
-pub const MODEL_FILENAME: &str = "parakeet-unified-en-0.6b-Q8_0.gguf";
-/// The file's size, for the progress bar before the server reports one.
-pub const MODEL_SIZE_BYTES: u64 = 731_357_568;
-/// Human-readable name shown in the settings window.
-pub const MODEL_NAME: &str = "Parakeet Unified English 0.6B";
+/// A model file pinned on Hugging Face.
+pub struct ModelFile {
+    /// Hugging Face repository the file lives in.
+    pub repo: &'static str,
+    /// Commit the file is pinned to, so the downloaded bytes are the tested ones.
+    pub revision: &'static str,
+    /// The file within the repository.
+    pub filename: &'static str,
+    /// The file's size, for the progress bar before the server reports one.
+    pub size_bytes: u64,
+    /// Human-readable name shown in the settings window.
+    pub name: &'static str,
+    /// Whether it decodes live while recording.
+    pub streams: bool,
+}
+
+pub const PARAKEET: ModelFile = ModelFile {
+    repo: "handy-computer/parakeet-unified-en-0.6b-gguf",
+    revision: "7e948f21b7bdbac698d3318db9d350f1096f3b6c",
+    filename: "parakeet-unified-en-0.6b-Q8_0.gguf",
+    size_bytes: 731_357_568,
+    name: "Parakeet Unified English 0.6B",
+    streams: true,
+};
+
+pub const QWEN3_ASR: ModelFile = ModelFile {
+    repo: "handy-computer/Qwen3-ASR-1.7B-gguf",
+    revision: "0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f",
+    filename: "Qwen3-ASR-1.7B-Q8_0.gguf",
+    size_bytes: 2_185_030_624,
+    name: "Qwen3-ASR 1.7B",
+    streams: false,
+};
+
+/// The pinned file for a model choice.
+pub fn model_file(model: SpeechModel) -> &'static ModelFile {
+    match model {
+        SpeechModel::Parakeet => &PARAKEET,
+        SpeechModel::Qwen3Asr => &QWEN3_ASR,
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct DownloadProgress {
@@ -196,9 +229,9 @@ struct HfProgressState {
 }
 
 impl HfProgressState {
-    fn new(now: Instant) -> Self {
+    fn new(total: u64, now: Instant) -> Self {
         Self {
-            total: MODEL_SIZE_BYTES,
+            total,
             downloaded: 0,
             rate: None,
             last_emit: now,
@@ -254,10 +287,10 @@ impl HfProgressState {
 }
 
 impl HfDownloadProgress {
-    fn new(app_handle: AppHandle) -> Self {
+    fn new(app_handle: AppHandle, total: u64) -> Self {
         Self {
             app_handle,
-            state: Arc::new(Mutex::new(HfProgressState::new(Instant::now()))),
+            state: Arc::new(Mutex::new(HfProgressState::new(total, Instant::now()))),
         }
     }
 
@@ -360,11 +393,20 @@ impl ModelManager {
         })
     }
 
-    /// The model file, if it is fully on disk: in the shared HF cache, or in
-    /// the models directory.
+    /// The model picked in settings.
+    pub fn selected(&self) -> &'static ModelFile {
+        model_file(settings::get_settings(&self.app_handle).speech_model)
+    }
+
+    /// The selected model's file, if it is fully on disk: in the shared HF
+    /// cache, or in the models directory.
     pub fn model_path(&self) -> Option<PathBuf> {
-        hf_cached_path_in(&hf_caches(), MODEL_REPO, MODEL_REVISION, MODEL_FILENAME).or_else(|| {
-            let local = self.models_dir.join(MODEL_FILENAME);
+        self.path_of(self.selected())
+    }
+
+    fn path_of(&self, file: &ModelFile) -> Option<PathBuf> {
+        hf_cached_path_in(&hf_caches(), file.repo, file.revision, file.filename).or_else(|| {
+            let local = self.models_dir.join(file.filename);
             local.is_file().then_some(local)
         })
     }
@@ -382,7 +424,8 @@ impl ModelManager {
     /// `model-download-complete` when the file is there. Returns `Ok(false)`
     /// if the download was cancelled (its partial file is kept for resume).
     pub async fn download(&self) -> Result<bool> {
-        if self.is_downloaded() {
+        let file = self.selected();
+        if self.path_of(file).is_some() {
             let _ = self.app_handle.emit("model-download-complete", ());
             return Ok(true);
         }
@@ -394,11 +437,11 @@ impl ModelManager {
         *self.cancel_token.lock().unwrap() = Some(cancel_token.clone());
         let _guard = DownloadGuard { manager: self };
 
-        if !self.fetch(&cancel_token).await? {
+        if !self.fetch(file, &cancel_token).await? {
             return Ok(false);
         }
         let _ = self.app_handle.emit("model-download-complete", ());
-        info!("Model {} downloaded", MODEL_FILENAME);
+        info!("Model {} downloaded", file.filename);
         Ok(true)
     }
 
@@ -413,10 +456,10 @@ impl ModelManager {
 
     /// Fetch the file from Hugging Face into the shared cache, retrying
     /// transient failures. `Ok(false)` if cancelled.
-    async fn fetch(&self, cancel_token: &CancellationToken) -> Result<bool> {
+    async fn fetch(&self, file: &ModelFile, cancel_token: &CancellationToken) -> Result<bool> {
         info!(
             "Downloading {} from {}@{}",
-            MODEL_FILENAME, MODEL_REPO, MODEL_REVISION
+            file.filename, file.repo, file.revision
         );
 
         // hf-hub has no working internal retry, so a single transient fault
@@ -446,11 +489,11 @@ impl ModelManager {
                 .build()
                 .map_err(|e| anyhow::anyhow!("Failed to init Hugging Face API: {}", e))?;
             let repo = api.repo(Repo::with_revision(
-                MODEL_REPO.to_string(),
+                file.repo.to_string(),
                 RepoType::Model,
-                MODEL_REVISION.to_string(),
+                file.revision.to_string(),
             ));
-            let progress = HfDownloadProgress::new(self.app_handle.clone());
+            let progress = HfDownloadProgress::new(self.app_handle.clone(), file.size_bytes);
 
             // hf-hub has no internal timeouts, so a wedged connection would
             // otherwise hang this attempt forever. The watchdog cancels a
@@ -479,7 +522,7 @@ impl ModelManager {
             // an attempt in the chunk loop can commit its resume offset, then
             // drop the future outright.
             let mut download = std::pin::pin!(repo.download_with_progress_cancellable(
-                MODEL_FILENAME,
+                file.filename,
                 progress,
                 attempt_token.clone()
             ));
@@ -574,14 +617,19 @@ mod tests {
     fn cached_path_falls_back_to_legacy_cache() {
         let active = TempDir::new().unwrap();
         let legacy = TempDir::new().unwrap();
-        let expected = add_cached_model(legacy.path(), MODEL_REPO, "old-revision", MODEL_FILENAME);
+        let expected = add_cached_model(
+            legacy.path(),
+            PARAKEET.repo,
+            "old-revision",
+            PARAKEET.filename,
+        );
         let caches = vec![
             Cache::new(active.path().to_path_buf()),
             Cache::new(legacy.path().to_path_buf()),
         ];
 
         assert_eq!(
-            hf_cached_path_in(&caches, MODEL_REPO, "old-revision", MODEL_FILENAME),
+            hf_cached_path_in(&caches, PARAKEET.repo, "old-revision", PARAKEET.filename),
             Some(expected)
         );
     }
@@ -590,15 +638,16 @@ mod tests {
     fn cached_path_prefers_active_cache() {
         let active = TempDir::new().unwrap();
         let legacy = TempDir::new().unwrap();
-        let expected = add_cached_model(active.path(), MODEL_REPO, "revision", MODEL_FILENAME);
-        add_cached_model(legacy.path(), MODEL_REPO, "revision", MODEL_FILENAME);
+        let expected =
+            add_cached_model(active.path(), PARAKEET.repo, "revision", PARAKEET.filename);
+        add_cached_model(legacy.path(), PARAKEET.repo, "revision", PARAKEET.filename);
         let caches = vec![
             Cache::new(active.path().to_path_buf()),
             Cache::new(legacy.path().to_path_buf()),
         ];
 
         assert_eq!(
-            hf_cached_path_in(&caches, MODEL_REPO, "revision", MODEL_FILENAME),
+            hf_cached_path_in(&caches, PARAKEET.repo, "revision", PARAKEET.filename),
             Some(expected)
         );
     }
@@ -608,25 +657,32 @@ mod tests {
     #[test]
     fn cache_lookup_prefers_pin_then_main_then_any_snapshot() {
         let cache = TempDir::new().unwrap();
-        let old =
-            add_unreferenced_snapshot_file(cache.path(), MODEL_REPO, "unknown", MODEL_FILENAME);
-        let main = add_cached_model(cache.path(), MODEL_REPO, "main", MODEL_FILENAME);
+        let old = add_unreferenced_snapshot_file(
+            cache.path(),
+            PARAKEET.repo,
+            "unknown",
+            PARAKEET.filename,
+        );
+        let main = add_cached_model(cache.path(), PARAKEET.repo, "main", PARAKEET.filename);
         let pin = add_unreferenced_snapshot_file(
             cache.path(),
-            MODEL_REPO,
-            MODEL_REVISION,
-            MODEL_FILENAME,
+            PARAKEET.repo,
+            PARAKEET.revision,
+            PARAKEET.filename,
         );
         let caches = vec![Cache::new(cache.path().to_path_buf())];
 
         for expected in [pin, main, old] {
             assert_eq!(
-                hf_cached_path_in(&caches, MODEL_REPO, MODEL_REVISION, MODEL_FILENAME),
+                hf_cached_path_in(&caches, PARAKEET.repo, PARAKEET.revision, PARAKEET.filename),
                 Some(expected.clone())
             );
             fs::remove_file(expected).unwrap();
         }
-        assert!(hf_cached_path_in(&caches, MODEL_REPO, MODEL_REVISION, MODEL_FILENAME).is_none());
+        assert!(
+            hf_cached_path_in(&caches, PARAKEET.repo, PARAKEET.revision, PARAKEET.filename)
+                .is_none()
+        );
     }
 
     #[test]

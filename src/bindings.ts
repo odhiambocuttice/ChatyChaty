@@ -339,6 +339,22 @@ async initializeShortcuts() : Promise<Result<null, string>> {
 async getModelStatus() : Promise<ModelStatus> {
     return await TAURI_INVOKE("get_model_status");
 },
+async getSpeechModels() : Promise<SpeechModelOption[]> {
+    return await TAURI_INVOKE("get_speech_models");
+},
+/**
+ * Switch to another speech model: stop a download of the old one and unload
+ * it, then download the new one if needed and load it in the background, so
+ * the settings window can switch back while the download runs.
+ */
+async changeSpeechModelSetting(model: SpeechModel) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_speech_model_setting", { model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async downloadModel() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("download_model") };
@@ -542,7 +558,7 @@ vad_backend?: VadBackend;
  * Which recording overlay to show: None / Minimal / Live. Migrated from the
  * old `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle; typing_speed?: TypingSpeed }
+overlay_style?: OverlayStyle; typing_speed?: TypingSpeed; speech_model?: SpeechModel }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type CustomSounds = { start: boolean; stop: boolean }
@@ -572,7 +588,7 @@ export type MacosMicrophoneStatus = "not_determined" | "restricted" | "denied" |
  */
 "unsupported"
 /**
- * What the settings window shows about the one model.
+ * What the settings window shows about the selected model.
  */
 export type ModelStatus = { name: string; size_mb: number; is_downloaded: boolean; is_downloading: boolean; is_loaded: boolean }
 export type OverlayPosition = "top" | "bottom"
@@ -662,6 +678,19 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * Which speech model transcribes. Parakeet types live while you speak;
+ * Qwen3-ASR makes fewer errors but types only after you stop.
+ */
+export type SpeechModel = "parakeet" | "qwen3_asr"
+/**
+ * A model the settings window offers.
+ */
+export type SpeechModelOption = { id: SpeechModel; name: string; size_mb: number; 
+/**
+ * Whether it types while you speak, or only after you stop.
+ */
+streams: boolean }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */

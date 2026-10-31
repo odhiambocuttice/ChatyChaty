@@ -134,6 +134,17 @@ impl TypingSpeed {
     }
 }
 
+/// Which speech model transcribes. Parakeet types live while you speak;
+/// Qwen3-ASR makes fewer errors but types only after you stop.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeechModel {
+    #[default]
+    Parakeet,
+    #[serde(rename = "qwen3_asr")]
+    Qwen3Asr,
+}
+
 /// How the transcribe shortcut's key events drive a recording.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -283,6 +294,8 @@ pub struct AppSettings {
     pub overlay_style: OverlayStyle,
     #[serde(default)]
     pub typing_speed: TypingSpeed,
+    #[serde(default)]
+    pub speech_model: SpeechModel,
 }
 
 fn default_hold_threshold_ms() -> u64 {
@@ -426,6 +439,7 @@ pub fn get_default_settings() -> AppSettings {
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
         typing_speed: TypingSpeed::default(),
+        speech_model: SpeechModel::default(),
     }
 }
 
@@ -771,6 +785,14 @@ mod tests {
         let settings: AppSettings = serde_json::from_value(stored).unwrap();
         assert_eq!(settings.typing_speed, TypingSpeed::Normal);
         assert_eq!(settings.typing_speed.key_delay_ms(), 50);
+    }
+
+    #[test]
+    fn speech_model_defaults_to_parakeet() {
+        let mut stored = default_settings_json();
+        stored.as_object_mut().unwrap().remove("speech_model");
+        let settings: AppSettings = serde_json::from_value(stored).unwrap();
+        assert_eq!(settings.speech_model, SpeechModel::Parakeet);
     }
 
     #[test]
