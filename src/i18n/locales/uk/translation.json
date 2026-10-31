@@ -91,6 +91,15 @@
     },
     "shortcut": {
       "title": "Комбінації клавіш"
+    },
+    "replyKeys": {
+      "title": "Draft Reply Keys",
+      "description": "Draft reply sends a screenshot of the chat to the first of these providers with a key. Add at least one free key. Keys are kept in the system key store, not in Chatelle's settings.",
+      "placeholder": "Paste API key",
+      "saved": "Key saved",
+      "save": "Save",
+      "remove": "Remove",
+      "saveFailed": "Could not save the key: {{error}}"
     }
   },
   "common": {
