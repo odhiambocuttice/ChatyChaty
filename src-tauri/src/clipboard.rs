@@ -1,5 +1,5 @@
 use crate::input::{self, EnigoState};
-use enigo::{Direction, Enigo, Keyboard};
+use enigo::{Enigo, Keyboard};
 use std::sync::{mpsc, Mutex, PoisonError};
 use tauri::{AppHandle, Manager};
 
@@ -42,8 +42,29 @@ pub(crate) fn with_enigo<T: Send + 'static>(
         .map_err(|_| "Main thread dropped the input request".to_string())?
 }
 
+/// The process ID of the app in front. Call on the main thread.
+#[cfg(target_os = "macos")]
+fn front_app_pid() -> Option<i32> {
+    let app = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication()?;
+    Some(app.processIdentifier())
+}
+
+/// Not checked on other platforms, so typing never stops for this reason.
+#[cfg(not(target_os = "macos"))]
+fn front_app_pid() -> Option<i32> {
+    None
+}
+
 /// Types text directly by simulating individual key presses.
 fn paste_direct(text: &str, app_handle: &AppHandle) -> Result<(), String> {
+    // Keys go to whatever is in front. A live test typed the second half of a
+    // reply into another window after the user clicked away, so typing stops
+    // as soon as a different app comes to the front.
+    let front_app = with_enigo(app_handle, |_| Ok(front_app_pid()))?;
+    let key_delay_ms = crate::settings::get_settings(app_handle)
+        .typing_speed
+        .key_delay_ms();
+
     // The waiting and the pressing have to happen on different threads. Pacing
     // sleeps once per character, so doing that on the main thread would freeze
     // the window for as long as the transcript takes to type; but enigo's macOS
@@ -51,15 +72,20 @@ fn paste_direct(text: &str, app_handle: &AppHandle) -> Result<(), String> {
     // keeps the rhythm and hands each individual key press to the main thread,
     // where each one costs microseconds.
     input::type_text_as_keystrokes(
-        |key| {
+        |stroke| {
             with_enigo(app_handle, move |enigo| {
-                enigo
-                    .key(key, Direction::Click)
-                    .map_err(|e| format!("{}", e))
+                if front_app_pid() != front_app {
+                    return Err("another app came to the front, so typing stopped".to_string());
+                }
+                match stroke {
+                    input::Stroke::Key(key, direction) => enigo.key(key, direction),
+                    input::Stroke::Text(character) => enigo.text(&character.to_string()),
+                }
+                .map_err(|e| format!("{}", e))
             })
         },
         text,
-        input::TYPING_KEY_DELAY_MS,
+        key_delay_ms,
     )
 }
 

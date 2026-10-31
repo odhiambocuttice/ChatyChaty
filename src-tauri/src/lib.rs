@@ -13,6 +13,7 @@ mod media;
 mod memory;
 mod overlay;
 pub mod portable;
+mod reply;
 mod secure_input;
 mod settings;
 mod shortcut;
@@ -424,6 +425,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_autostart_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
+            shortcut::change_typing_speed_setting,
             shortcut::change_debug_mode_setting,
             shortcut::change_extra_recording_buffer_setting,
             shortcut::suspend_all_bindings,
