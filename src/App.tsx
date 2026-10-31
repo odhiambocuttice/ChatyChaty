@@ -20,7 +20,6 @@ import {
   TypingSpeed,
 } from "./components/settings";
 import { SettingsGroup } from "./components/ui/SettingsGroup";
-import HandyTextLogo from "./components/icons/HandyTextLogo";
 import appIcon from "../src-tauri/icons/128x128@2x.png";
 import { usePermissions } from "./hooks/usePermissions";
 import { useSettings } from "./hooks/useSettings";
@@ -201,10 +200,6 @@ function App() {
                 alt=""
                 className="size-16 mx-auto drop-shadow-sm"
               />
-              <HandyTextLogo width={260} className="mx-auto mt-3" />
-              <p className="mt-1 text-[19px] leading-[1.4] text-ink-3">
-                {t("app.tagline")}
-              </p>
             </header>
             <div className="mt-6 empty:hidden">
               <SecureInputWarning />

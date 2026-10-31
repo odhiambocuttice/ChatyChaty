@@ -182,8 +182,5 @@
     "openSettings": "Abrir configuración",
     "allowed": "Permitido",
     "waiting": "En espera"
-  },
-  "app": {
-    "tagline": "Speak. It types."
   }
 }
