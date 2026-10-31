@@ -79,6 +79,11 @@ const PROVIDERS: [Provider; 3] = [
 /// and another answered "I am already at the bar waiting for you" with "will
 /// swing by in about 35 minutes". The user never meets in person, so this rule
 /// comes before the others, and `promises_to_meet` checks the reply as well.
+///
+/// Each draft sees only the screenshot, so the user's earlier replies look like
+/// any other message. A live test answered "What do you like to make?" by
+/// copying the user's previous reply with one dish changed, and left the
+/// question unanswered.
 fn instructions() -> String {
     format!(
         "The image is a screenshot of the user's screen. Somewhere on it is a conversation \
@@ -131,7 +136,12 @@ fn instructions() -> String {
          - Internal notes are private to the team. Follow what a note tells the team to do or \
            avoid, but never quote it, repeat it or hint at it, never mention that a note exists, \
            and never tell the other side a fact that appears only in a note.\n\
-         - Match the language and tone of the user's earlier messages.\n\
+         - The user's own messages on screen are already sent. Never repeat or reword one of \
+           them: write something new that moves the conversation on.\n\
+         - Match the language and tone of the user's earlier messages, but not their wording.\n\
+         - If the other side asks the user a question about themselves, such as what they \
+           like or what they enjoy doing, answer it in one short, general sentence first, \
+           without names, places or other details. Then ask something back.\n\
          - Write a full reply, usually two to four sentences: answer every point in the \
            newest messages from the other side, then add a related thought or question that \
            keeps the conversation going. Write an email only when the conversation is an \
@@ -543,6 +553,15 @@ mod tests {
         assert!(text.contains("never ignore it and never return it"));
         assert!(text.contains("one short, warm and light sentence"));
         assert!(text.contains("keep a friendly distance"));
+    }
+
+    #[test]
+    fn the_instructions_never_repeat_a_sent_message_and_answer_personal_questions() {
+        let text = instructions();
+        assert!(text.contains("Never repeat or reword one of them"));
+        assert!(text.contains("not their wording"));
+        assert!(text.contains("answer it in one short, general sentence first"));
+        assert!(!text.contains("Match the language and tone of the user's earlier messages."));
     }
 
     #[test]
