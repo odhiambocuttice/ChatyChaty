@@ -12,6 +12,7 @@ mod managers;
 mod media;
 mod memory;
 mod overlay;
+mod phone;
 pub mod portable;
 mod reply;
 mod secure_input;
