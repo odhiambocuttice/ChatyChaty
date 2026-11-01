@@ -86,6 +86,7 @@ fn paste_direct(text: &str, app_handle: &AppHandle) -> Result<(), String> {
         },
         text,
         key_delay_ms,
+        input::CharacterInput::for_this_platform(),
     )
 }
 

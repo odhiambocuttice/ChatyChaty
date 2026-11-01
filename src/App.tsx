@@ -7,6 +7,7 @@ import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
 import "./App.css";
 import SecureInputWarning from "./components/SecureInputWarning";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { LogViewer } from "./components/LogViewer";
 import { ModelStatus } from "./components/ModelStatus";
 import { PermissionsScreen } from "./components/Permissions";
 import {
@@ -27,7 +28,7 @@ import { useSettings } from "./hooks/useSettings";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import { commands } from "@/bindings";
 
-const TABS = ["shortcuts", "microphone", "basics", "model"] as const;
+const TABS = ["shortcuts", "microphone", "basics", "model", "logs"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABEL_KEYS: Record<Tab, string> = {
@@ -35,6 +36,7 @@ const TAB_LABEL_KEYS: Record<Tab, string> = {
   microphone: "settings.microphone.title",
   basics: "settings.basics.title",
   model: "settings.tabs.model",
+  logs: "settings.tabs.logs",
 };
 
 function App() {
@@ -295,6 +297,11 @@ function App() {
                     </ErrorBoundary>
                   </SettingsGroup>
                 </>
+              )}
+              {tab === "logs" && (
+                <SettingsGroup title={t("settings.groups.log")}>
+                  <LogViewer />
+                </SettingsGroup>
               )}
             </div>
           </div>

@@ -103,7 +103,8 @@
     "tabs": {
       "label": "Settings",
       "shortcuts": "Shortcuts",
-      "model": "Model"
+      "model": "Model",
+      "logs": "Logs"
     },
     "groups": {
       "keyboardShortcuts": "Keyboard shortcuts",
@@ -112,11 +113,20 @@
       "overlay": "Overlay",
       "startup": "Startup",
       "speechModel": "Speech model",
-      "modelStatus": "Status"
+      "modelStatus": "Status",
+      "log": "Log"
     },
     "speechModel": {
       "liveDetails": "{{size}} MB · Types as you speak",
       "afterStopDetails": "{{size}} MB · Types after you stop, with fewer errors"
+    },
+    "logs": {
+      "hint": "When something goes wrong, copy the log and paste it into your report.",
+      "empty": "No log yet.",
+      "copy": "Copy log",
+      "copied": "Copied",
+      "refresh": "Refresh",
+      "openFolder": "Open folder"
     }
   },
   "common": {

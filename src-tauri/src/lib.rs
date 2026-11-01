@@ -448,6 +448,7 @@ pub fn run(cli_args: CliArgs) {
             commands::get_default_settings,
             commands::get_reply_provider_keys,
             commands::set_reply_provider_key,
+            commands::get_log_text,
             commands::get_log_dir_path,
             commands::set_log_level,
             commands::open_log_dir,
