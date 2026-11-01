@@ -36,6 +36,21 @@ pub fn set_reply_provider_key(provider: String, key: String) -> Result<(), Strin
     crate::reply::save_provider_key(&provider, &key)
 }
 
+/// The log file's text, for the Logs tab. Rotation keeps the file at 500 KB,
+/// so the whole file is small enough to show.
+#[tauri::command]
+#[specta::specta]
+pub fn get_log_text(app: AppHandle) -> Result<String, String> {
+    let path = crate::portable::app_log_dir(&app)
+        .map_err(|e| format!("Failed to get log directory: {}", e))?
+        .join("handy.log");
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("Failed to read {}: {}", path.display(), e)),
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn get_log_dir_path(app: AppHandle) -> Result<String, String> {

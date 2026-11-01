@@ -35,6 +35,28 @@ fn jittered_delay_ms(base_ms: u64, index: usize) -> u64 {
     base_ms - spread + scrambled % (2 * spread + 1)
 }
 
+/// How a printable character reaches the keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CharacterInput {
+    /// Press the key that makes it, holding Shift when it sits on the shifted
+    /// layer: the closest thing to a person typing.
+    Keys,
+    /// Send the character itself, one text event per character. Windows gets
+    /// this: enigo's key lookup there keeps the Shift flag inside the key
+    /// code, so capitals and shifted symbols pressed as keys type nothing.
+    Text,
+}
+
+impl CharacterInput {
+    pub fn for_this_platform() -> Self {
+        if cfg!(target_os = "windows") {
+            CharacterInput::Text
+        } else {
+            CharacterInput::Keys
+        }
+    }
+}
+
 /// One thing to send to the keyboard while typing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Stroke {
@@ -75,6 +97,7 @@ pub fn type_text_as_keystrokes<F>(
     mut send_key: F,
     text: &str,
     key_delay_ms: u64,
+    characters: CharacterInput,
 ) -> Result<(), String>
 where
     F: FnMut(Stroke) -> Result<(), String>,
@@ -105,6 +128,7 @@ where
                 Stroke::Key(Key::Shift, Direction::Release),
             ],
             '\t' => vec![click(Key::Tab)],
+            other if characters == CharacterInput::Text => vec![Stroke::Text(other)],
             other if needs_shift(other) => vec![
                 Stroke::Key(Key::Shift, Direction::Press),
                 click(Key::Unicode(other)),
@@ -180,8 +204,13 @@ mod tests {
         let mut keyboard = RecordingKeyboard::default();
         let text = "hello, world.";
 
-        type_text_as_keystrokes(|stroke| keyboard.send(stroke), text, 0)
-            .expect("typing should succeed");
+        type_text_as_keystrokes(
+            |stroke| keyboard.send(stroke),
+            text,
+            0,
+            CharacterInput::Keys,
+        )
+        .expect("typing should succeed");
 
         assert!(
             keyboard.bulk_text.is_empty(),
@@ -200,8 +229,13 @@ mod tests {
     fn a_new_line_is_shift_return_so_it_never_sends_the_message() {
         let mut keyboard = RecordingKeyboard::default();
 
-        type_text_as_keystrokes(|stroke| keyboard.send(stroke), "a\r\nb\tc", 0)
-            .expect("typing should succeed");
+        type_text_as_keystrokes(
+            |stroke| keyboard.send(stroke),
+            "a\r\nb\tc",
+            0,
+            CharacterInput::Keys,
+        )
+        .expect("typing should succeed");
 
         assert_eq!(
             keyboard.events,
@@ -222,8 +256,13 @@ mod tests {
         // Found live: without Shift, a drafted reply arrived with no capitals.
         let mut keyboard = RecordingKeyboard::default();
 
-        type_text_as_keystrokes(|stroke| keyboard.send(stroke), "Hi?", 0)
-            .expect("typing should succeed");
+        type_text_as_keystrokes(
+            |stroke| keyboard.send(stroke),
+            "Hi?",
+            0,
+            CharacterInput::Keys,
+        )
+        .expect("typing should succeed");
 
         assert_eq!(
             keyboard.events,
@@ -239,12 +278,42 @@ mod tests {
         );
     }
 
+    /// Found live on Windows: typed as keys, every capital, space and "?" was
+    /// dropped, so "That is true, ok?" arrived as "hatistrue,ok".
+    #[test]
+    fn as_text_every_character_is_its_own_event_and_a_new_line_stays_a_key() {
+        let mut keyboard = RecordingKeyboard::default();
+
+        type_text_as_keystrokes(
+            |stroke| keyboard.send(stroke),
+            "Hi ?\nok",
+            0,
+            CharacterInput::Text,
+        )
+        .expect("typing should succeed");
+
+        assert_eq!(keyboard.bulk_text, vec!["H", "i", " ", "?", "o", "k"]);
+        assert_eq!(
+            keyboard.events,
+            vec![
+                (Key::Shift, Direction::Press),
+                (Key::Return, Direction::Click),
+                (Key::Shift, Direction::Release),
+            ]
+        );
+    }
+
     #[test]
     fn sends_characters_off_the_layout_one_at_a_time_as_text() {
         let mut keyboard = RecordingKeyboard::default();
 
-        type_text_as_keystrokes(|stroke| keyboard.send(stroke), "a’é", 0)
-            .expect("typing should succeed");
+        type_text_as_keystrokes(
+            |stroke| keyboard.send(stroke),
+            "a’é",
+            0,
+            CharacterInput::Keys,
+        )
+        .expect("typing should succeed");
 
         assert_eq!(keyboard.events, vec![(Key::Unicode('a'), Direction::Click)]);
         assert_eq!(keyboard.bulk_text, vec!["’".to_string(), "é".to_string()]);
@@ -259,6 +328,7 @@ mod tests {
             |stroke| keyboard.send(stroke),
             text,
             TypingSpeed::Normal.key_delay_ms(),
+            CharacterInput::Keys,
         )
         .expect("typing should succeed");
 
@@ -350,6 +420,7 @@ mod tests {
             },
             &text,
             TypingSpeed::Normal.key_delay_ms(),
+            CharacterInput::for_this_platform(),
         )
         .expect("typing failed");
 
