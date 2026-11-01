@@ -6,7 +6,9 @@ import { useSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/Button";
 
 /** QR code and status for the "Phone (Wi-Fi)" microphone. */
-export const PhoneMicrophonePanel: React.FC = () => {
+export const PhoneMicrophonePanel: React.FC<{ grouped?: boolean }> = ({
+  grouped = false,
+}) => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const active = getSetting("selected_microphone") === "phone-wifi";
@@ -53,7 +55,9 @@ export const PhoneMicrophonePanel: React.FC = () => {
   const error = failure ?? status?.error ?? null;
 
   return (
-    <div className="mt-3 flex flex-col items-start gap-2 text-sm">
+    <div
+      className={`flex max-w-md flex-col items-start gap-2 text-sm ${grouped ? "pb-4" : "mt-2 px-4"}`}
+    >
       {status?.qr_svg && (
         <>
           <p>{t("settings.sound.microphone.phoneScan")}</p>
