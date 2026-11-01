@@ -463,7 +463,17 @@ impl Default for AppSettings {
 /// one-time debug dump of the loaded settings.
 pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     let settings = get_settings(app);
-    debug!("Loaded settings: {:?}", settings);
+    debug!("Loaded settings: {:?}", settings_for_log(&settings));
+    settings
+}
+
+/// A copy of `settings` that is safe to write to the log: the phone
+/// microphone token would let anyone on the network use the microphone.
+fn settings_for_log(settings: &AppSettings) -> AppSettings {
+    let mut settings = settings.clone();
+    if settings.phone_microphone_token.is_some() {
+        settings.phone_microphone_token = Some("<redacted>".to_string());
+    }
     settings
 }
 
@@ -813,6 +823,19 @@ mod tests {
         let settings: AppSettings = serde_json::from_value(stored).unwrap();
         assert_eq!(settings.phone_microphone_token, None);
         assert_eq!(settings.phone_microphone_port, None);
+    }
+
+    #[test]
+    fn logged_settings_hide_the_phone_token() {
+        let settings = AppSettings {
+            phone_microphone_token: Some("0123456789abcdef0123456789abcdef".to_string()),
+            ..get_default_settings()
+        };
+        let logged = format!("{:?}", settings_for_log(&settings));
+        assert!(!logged.contains("0123456789abcdef0123456789abcdef"));
+        assert!(logged.contains("phone_microphone_token"));
+        // The settings themselves keep the token.
+        assert!(settings.phone_microphone_token.is_some());
     }
 
     #[test]
