@@ -7,10 +7,11 @@
 # Build artifacts are pushed to Cachix so Nix users can skip local compilation.
 
 name: "nix build check"
+# Linux builds are on hold until further notice: this runs only by hand.
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [__linux-builds-on-hold__]
     paths:
       - "flake.nix"
       - "flake.lock"
@@ -20,6 +21,7 @@ on:
       - "src/**"
       - ".github/workflows/**"
   pull_request:
+    branches: [__linux-builds-on-hold__]
     paths:
       - "flake.nix"
       - "flake.lock"
