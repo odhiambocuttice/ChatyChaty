@@ -174,6 +174,10 @@ mod tests {
         let page = render_page("tok");
         assert!(page.contains("\"tok\""));
         assert!(page.contains("\"Record\""));
+        assert!(page.contains("Opened in another tab"));
+        assert!(page.contains("Could not start the microphone"));
+        // No favicon request, so no rejected request in the log.
+        assert!(page.contains(r#"<link rel="icon" href="data:,">"#));
         assert!(!page.contains("__TOKEN__"));
         assert!(!page.contains("__STRINGS__"));
     }

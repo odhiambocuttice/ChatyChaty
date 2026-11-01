@@ -213,6 +213,8 @@
     "reconnecting": "Reconnecting…",
     "recording": "Recording…",
     "transcribing": "Transcribing…",
-    "micDenied": "Chrome blocked the microphone. Allow it in the site settings and reload."
+    "micDenied": "Chrome blocked the microphone. Allow it in the site settings and reload.",
+    "micFailed": "Could not start the microphone. Reload the page and try again.",
+    "replaced": "Opened in another tab. Tap to reconnect here."
   }
 }

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chatelle</title>
+<link rel="icon" href="data:,">
 <style>
   html, body { height: 100%; margin: 0; }
   body {
@@ -29,34 +30,80 @@ const S = __STRINGS__;
 const btn = document.getElementById("rec");
 const statusEl = document.getElementById("status");
 let ws = null;
-let micReady = false;
 let state = "idle";
 let wakeLock = null;
+// A newer page took the connection (close code 4000). Wait for a tap.
+let replaced = false;
+// Shown until the microphone starts.
+let micError = null;
+// The running microphone: { stream, ctx }.
+let mic = null;
+// The microphone start in progress, so a double tap starts it only once.
+let micStarting = null;
+// A tap is being handled. The button stays disabled, so it sends one toggle.
+let busy = false;
+// True once audio has gone out on the current WebSocket. The app counts the
+// phone as connected only when its audio arrives.
+let audioSent = false;
+let audioWaiters = [];
 
 function render() {
   const connected = ws && ws.readyState === WebSocket.OPEN;
   btn.textContent = state === "recording" ? S.stop : S.record;
   btn.classList.toggle("on", state === "recording");
-  btn.disabled = !connected || state === "transcribing";
-  if (!connected) statusEl.textContent = S.reconnecting;
+  btn.disabled = !replaced && (!connected || state === "transcribing" || busy);
+  if (replaced) statusEl.textContent = S.replaced;
+  else if (!connected) statusEl.textContent = S.reconnecting;
+  else if (micError) statusEl.textContent = micError;
   else if (state === "recording") statusEl.textContent = S.recording;
   else if (state === "transcribing") statusEl.textContent = S.transcribing;
   else statusEl.textContent = S.connected;
 }
 
 function connect() {
-  ws = new WebSocket("wss://" + location.host + "/ws?t=" + encodeURIComponent(TOKEN));
-  ws.binaryType = "arraybuffer";
-  ws.onopen = render;
-  ws.onmessage = (e) => {
+  const sock = new WebSocket("wss://" + location.host + "/ws?t=" + encodeURIComponent(TOKEN));
+  ws = sock;
+  audioSent = false;
+  sock.binaryType = "arraybuffer";
+  sock.onopen = render;
+  sock.onmessage = (e) => {
     if (typeof e.data !== "string") return;
     try {
       const m = JSON.parse(e.data);
       if (m.type === "state") { state = m.state; render(); }
     } catch (_) { /* ignore bad message */ }
   };
-  ws.onclose = () => { render(); setTimeout(connect, 2000); };
-  ws.onerror = () => ws.close();
+  sock.onclose = (e) => {
+    if (sock !== ws) return;
+    if (e.code === 4000) {
+      // Another tab is the phone now. Reconnecting on our own would take the
+      // connection back, and the two tabs would fight forever.
+      replaced = true;
+      render();
+      return;
+    }
+    render();
+    setTimeout(connect, 2000);
+  };
+  sock.onerror = () => sock.close();
+}
+
+function sendAudio(buffer) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(buffer);
+  if (!audioSent) {
+    audioSent = true;
+    audioWaiters.splice(0).forEach((resolve) => resolve());
+  }
+}
+
+// Resolves when audio has gone out on the current WebSocket, or after 3 s.
+function waitForAudio() {
+  if (audioSent) return Promise.resolve();
+  return new Promise((resolve) => {
+    audioWaiters.push(resolve);
+    setTimeout(resolve, 3000);
+  });
 }
 
 // Runs in the audio thread. Resamples to 16 kHz (linear interpolation) and posts ~20 ms blocks.
@@ -95,18 +142,57 @@ registerProcessor("pcm16", Pcm16);
 `;
 
 async function startMic() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
-  });
-  const ctx = new AudioContext();
-  const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
-  await ctx.audioWorklet.addModule(url);
-  const node = new AudioWorkletNode(ctx, "pcm16");
-  node.port.onmessage = (e) => {
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(e.data);
-  };
-  ctx.createMediaStreamSource(stream).connect(node);
-  if (ctx.state === "suspended") await ctx.resume();
+  let stream = null;
+  let ctx = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+    });
+    ctx = new AudioContext();
+    const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
+    await ctx.audioWorklet.addModule(url);
+    const node = new AudioWorkletNode(ctx, "pcm16");
+    node.port.onmessage = (e) => sendAudio(e.data);
+    ctx.createMediaStreamSource(stream).connect(node);
+    // Chrome only runs nodes that lead to the speakers. The gain of 0 keeps
+    // the worklet running and plays nothing.
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    node.connect(mute).connect(ctx.destination);
+    if (ctx.state !== "running") await ctx.resume();
+    mic = { stream, ctx };
+  } catch (err) {
+    if (stream) stream.getTracks().forEach((track) => track.stop());
+    if (ctx) ctx.close().catch(() => {});
+    throw err;
+  }
+}
+
+function stopMic() {
+  if (!mic) return;
+  mic.stream.getTracks().forEach((track) => track.stop());
+  mic.ctx.close().catch(() => {});
+  mic = null;
+}
+
+// Starts the microphone if it is not running, or restarts it if Chrome ended
+// its track. Only one start runs at a time.
+function ensureMic() {
+  const track = mic && mic.stream.getAudioTracks()[0];
+  if (track && track.readyState !== "ended") return Promise.resolve();
+  if (!micStarting) {
+    stopMic();
+    micStarting = startMic().finally(() => {
+      micStarting = null;
+    });
+  }
+  return micStarting;
+}
+
+async function resumeAudio() {
+  if (mic && mic.ctx.state !== "running") {
+    try { await mic.ctx.resume(); } catch (_) { /* tried again on the next tap */ }
+  }
 }
 
 async function requestWakeLock() {
@@ -115,21 +201,40 @@ async function requestWakeLock() {
   } catch (_) { /* not critical */ }
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") requestWakeLock();
+  if (document.visibilityState !== "visible") return;
+  requestWakeLock();
+  resumeAudio();
 });
 
 btn.addEventListener("click", async () => {
-  if (!micReady) {
+  if (replaced) {
+    // This tap only takes the connection back; it does not start recording.
+    replaced = false;
+    connect();
+    render();
+    return;
+  }
+  if (busy) return;
+  busy = true;
+  render();
+  try {
     try {
-      await startMic();
-      micReady = true;
-      requestWakeLock();
-    } catch (_) {
-      statusEl.textContent = S.micDenied;
+      await ensureMic();
+      micError = null;
+    } catch (err) {
+      const blocked = err && (err.name === "NotAllowedError" || err.name === "SecurityError");
+      micError = blocked ? S.micDenied : S.micFailed;
       return;
     }
+    await resumeAudio();
+    requestWakeLock();
+    // The app ignores a press until the phone's audio has arrived.
+    await waitForAudio();
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send('{"type":"toggle"}');
+  } finally {
+    busy = false;
+    render();
   }
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send('{"type":"toggle"}');
 });
 
 render();

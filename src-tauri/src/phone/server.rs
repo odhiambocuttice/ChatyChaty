@@ -25,6 +25,8 @@ use tokio::time::{timeout, Instant};
 use tokio_rustls::rustls;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::Role;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
@@ -38,6 +40,9 @@ const PING_INTERVAL: Duration = Duration::from_secs(5);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 /// Time allowed for one WebSocket send.
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
+/// Close code sent to a connection that a newer phone connection replaced.
+/// The page does not reconnect on its own after it.
+const REPLACED_CLOSE_CODE: u16 = 4000;
 
 /// Everything the phone server needs from the app.
 pub struct ServerConfig<S: Sink> {
@@ -70,11 +75,64 @@ struct Shared<S: Sink> {
 }
 
 impl<S: Sink> Shared<S> {
+    fn new(
+        token: String,
+        capture: PhoneCapture<S>,
+        on_toggle: Arc<dyn Fn() + Send + Sync>,
+        state: watch::Receiver<PhoneState>,
+        on_connection_change: Arc<dyn Fn(bool) + Send + Sync>,
+    ) -> Self {
+        Self {
+            token,
+            capture,
+            on_toggle,
+            state,
+            on_connection_change,
+            current: Mutex::new(Current {
+                id: 0,
+                next_id: 0,
+                stopped: false,
+            }),
+            current_tx: watch::channel(0).0,
+        }
+    }
+
+    /// Feeds audio from connection `id`. The first audio from the current
+    /// phone marks it connected. Audio from a replaced connection is dropped.
+    fn receive_audio(&self, id: u64, samples: &[f32]) {
+        {
+            let current = self.lock_current();
+            if current.id != id || current.stopped {
+                return;
+            }
+            // Under the lock, so the change events keep the order of the connections.
+            if !self.capture.is_connected() {
+                self.capture.set_connected(true);
+                (self.on_connection_change)(true);
+            }
+        }
+        self.capture.push_samples(samples);
+    }
+
+    /// Passes on a button press, but only from the current phone.
+    fn receive_toggle(&self, id: u64) {
+        let is_current = {
+            let current = self.lock_current();
+            current.id == id && !current.stopped
+        };
+        if is_current {
+            (self.on_toggle)();
+        }
+    }
+
     fn lock_current(&self) -> std::sync::MutexGuard<'_, Current> {
         self.current.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Makes a new connection the current phone. Returns `None` after `stop`.
+    ///
+    /// The phone counts as connected only when its first audio arrives, so a
+    /// page that is open but has no microphone yet is not connected.
     fn register(&self) -> Option<u64> {
         let mut current = self.lock_current();
         if current.stopped {
@@ -83,9 +141,7 @@ impl<S: Sink> Shared<S> {
         current.next_id += 1;
         current.id = current.next_id;
         self.current_tx.send_replace(current.id);
-        // Under the lock, so the change events keep the order of the connections.
-        self.capture.set_connected(true);
-        (self.on_connection_change)(true);
+        self.set_disconnected();
         Some(current.id)
     }
 
@@ -97,8 +153,15 @@ impl<S: Sink> Shared<S> {
         }
         current.id = 0;
         self.current_tx.send_replace(0);
-        self.capture.set_connected(false);
-        (self.on_connection_change)(false);
+        self.set_disconnected();
+    }
+
+    /// Call with the `current` lock held, so the change events keep their order.
+    fn set_disconnected(&self) {
+        if self.capture.is_connected() {
+            self.capture.set_connected(false);
+            (self.on_connection_change)(false);
+        }
     }
 }
 
@@ -155,19 +218,13 @@ pub async fn start_server<S: Sink>(config: ServerConfig<S>) -> anyhow::Result<Ru
     };
     let port = listener.local_addr()?.port();
 
-    let shared = Arc::new(Shared {
-        token: config.token,
-        capture: config.capture,
-        on_toggle: config.on_toggle,
-        state: config.state,
-        on_connection_change: config.on_connection_change,
-        current: Mutex::new(Current {
-            id: 0,
-            next_id: 0,
-            stopped: false,
-        }),
-        current_tx: watch::channel(0).0,
-    });
+    let shared = Arc::new(Shared::new(
+        config.token,
+        config.capture,
+        config.on_toggle,
+        config.state,
+        config.on_connection_change,
+    ));
 
     let accept_task = tokio::spawn(accept_loop(listener, acceptor, shared.clone()));
     let stop_connections: StopFn = Box::new(move || {
@@ -241,7 +298,8 @@ async fn handle_connection<S: Sink>(
             .is_some_and(|token| token_matches(&shared.token, token))
     });
     let Some(request) = request else {
-        log::warn!("Phone server: rejected a request from {peer} without a valid token");
+        // Debug, not warn: a browser retrying an old link would flood the log.
+        log::debug!("Phone server: rejected a request from {peer} without a valid token");
         respond(&mut stream, "403 Forbidden", &[], b"").await;
         return;
     };
@@ -367,10 +425,10 @@ where
                     let Some(Ok(message)) = message else { break };
                     last_seen = Instant::now();
                     match message {
-                        Message::Binary(bytes) => shared.capture.push_samples(&decode_pcm16le(&bytes)),
+                        Message::Binary(bytes) => shared.receive_audio(id, &decode_pcm16le(&bytes)),
                         Message::Text(text) => {
                             if parse_client_message(text.as_str()) == Some(ClientMessage::Toggle) {
-                                (shared.on_toggle)();
+                                shared.receive_toggle(id);
                             }
                         }
                         Message::Close(_) => break,
@@ -408,7 +466,13 @@ where
 
     if replaced {
         log::info!("Phone at {peer} was closed: a newer phone connected or the server stopped");
-        let _ = timeout(SEND_TIMEOUT, ws.close(None)).await;
+        // A newer phone took over: tell the page not to reconnect on its own.
+        // When the server stops, the current id is 0 and a plain close is sent.
+        let frame = (*current_rx.borrow() != 0).then(|| CloseFrame {
+            code: CloseCode::from(REPLACED_CLOSE_CODE),
+            reason: "replaced".into(),
+        });
+        let _ = timeout(SEND_TIMEOUT, ws.close(frame)).await;
     } else {
         log::info!("Phone at {peer} disconnected");
         shared.unregister(id);
@@ -610,10 +674,54 @@ mod tests {
         assert!(response.contains("Record"));
     }
 
+    /// Waits for the state message that the server sends after it registers
+    /// the connection.
+    async fn first_state(ws: &mut WebSocketStream<TlsStream<TcpStream>>) {
+        let message = tokio::time::timeout(Duration::from_secs(5), ws.next())
+            .await
+            .expect("no state message")
+            .expect("connection ended")
+            .unwrap();
+        assert!(matches!(message, Message::Text(_)), "{message:?}");
+    }
+
+    /// Reads until the server's close frame and returns its code and reason.
+    async fn close_frame(ws: &mut WebSocketStream<TlsStream<TcpStream>>) -> Option<(u16, String)> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(message) = ws.next().await {
+                match message {
+                    Ok(Message::Close(frame)) => {
+                        return frame.map(|f| (u16::from(f.code), f.reason.to_string()));
+                    }
+                    Ok(_) => {}
+                    Err(_) => return None,
+                }
+            }
+            None
+        })
+        .await
+        .expect("connection was not closed")
+    }
+
+    #[tokio::test]
+    async fn connected_only_after_first_audio() {
+        let h = start().await;
+        let mut ws = ws_connect(&h).await;
+        first_state(&mut ws).await;
+        assert!(!h.capture.is_connected());
+        assert!(h.connection_changes.lock().unwrap().is_empty());
+
+        ws.send(Message::binary(vec![0x00, 0x00])).await.unwrap();
+        wait_until("phone connected", || h.capture.is_connected()).await;
+        assert_eq!(*h.connection_changes.lock().unwrap(), vec![true]);
+    }
+
     #[tokio::test]
     async fn audio_reaches_capture() {
         let h = start().await;
         let mut ws = ws_connect(&h).await;
+        // Audio sent before the recording starts is dropped.
+        ws.send(Message::binary(vec![0x00, 0x00])).await.unwrap();
         wait_until("phone connected", || h.capture.is_connected()).await;
         h.capture.start(CollectingSink::new()).unwrap();
         for _ in 0..4 {
@@ -650,23 +758,16 @@ mod tests {
     async fn new_connection_replaces_old() {
         let h = start().await;
         let mut first = ws_connect(&h).await;
+        first.send(Message::binary(vec![0x00, 0x00])).await.unwrap();
         wait_until("phone connected", || h.capture.is_connected()).await;
         let _second = ws_connect(&h).await;
 
-        let closed = tokio::time::timeout(Duration::from_secs(5), async {
-            while let Some(message) = first.next().await {
-                if matches!(message, Ok(Message::Close(_))) {
-                    return true;
-                }
-                if message.is_err() {
-                    return false;
-                }
-            }
-            false
-        })
-        .await
-        .expect("first connection was not closed");
-        assert!(closed, "first connection ended without a close frame");
+        // 4000 tells the page not to reconnect, so two open pages do not
+        // take the connection from each other.
+        assert_eq!(
+            close_frame(&mut first).await,
+            Some((4000, "replaced".to_string()))
+        );
         // Let the first connection's task finish before checking the state.
         tokio::time::timeout(Duration::from_secs(5), async {
             while first.next().await.is_some() {}
@@ -674,7 +775,68 @@ mod tests {
         .await
         .expect("first connection did not end");
 
-        assert!(h.capture.is_connected());
-        assert_eq!(*h.connection_changes.lock().unwrap(), vec![true, true]);
+        // The second phone has sent no audio yet.
+        assert!(!h.capture.is_connected());
+        assert_eq!(*h.connection_changes.lock().unwrap(), vec![true, false]);
+    }
+
+    fn test_shared() -> (
+        Shared<CollectingSink>,
+        PhoneCapture<CollectingSink>,
+        Arc<AtomicUsize>,
+    ) {
+        let capture = PhoneCapture::new(4);
+        let toggles = Arc::new(AtomicUsize::new(0));
+        let shared = Shared::new(
+            "token".to_string(),
+            capture.clone(),
+            {
+                let toggles = toggles.clone();
+                Arc::new(move || {
+                    toggles.fetch_add(1, Ordering::SeqCst);
+                })
+            },
+            tokio::sync::watch::channel(PhoneState::Idle).1,
+            Arc::new(|_| {}),
+        );
+        (shared, capture, toggles)
+    }
+
+    #[test]
+    fn replaced_connection_audio_and_toggle_are_ignored() {
+        let (shared, capture, toggles) = test_shared();
+        let old = shared.register().unwrap();
+        shared.receive_audio(old, &[0.0]);
+        assert!(capture.is_connected());
+        let new = shared.register().unwrap();
+        assert!(!capture.is_connected(), "no audio from the new phone yet");
+
+        // Audio from the old phone does not mark it connected again.
+        shared.receive_audio(old, &[0.25; 4]);
+        assert!(!capture.is_connected());
+        shared.receive_audio(new, &[0.0; 4]);
+        assert!(capture.is_connected());
+
+        capture.start(CollectingSink::new()).unwrap();
+        shared.receive_audio(old, &[0.25; 4]);
+        shared.receive_toggle(old);
+        shared.receive_audio(new, &[0.5; 4]);
+        assert_eq!(toggles.load(Ordering::SeqCst), 0);
+        assert_eq!(capture.stop().unwrap().into_samples(), vec![0.5; 4]);
+
+        shared.receive_toggle(new);
+        assert_eq!(toggles.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn replaced_connection_ending_keeps_the_new_one_connected() {
+        let (shared, capture, _toggles) = test_shared();
+        let old = shared.register().unwrap();
+        let new = shared.register().unwrap();
+        shared.receive_audio(new, &[0.0]);
+        shared.unregister(old);
+        assert!(capture.is_connected());
+        shared.unregister(new);
+        assert!(!capture.is_connected());
     }
 }
