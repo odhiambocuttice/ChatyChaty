@@ -38,6 +38,7 @@ struct Provider {
     url: &'static str,
     model: &'static str,
     max_tokens: u32,
+    reasoning_effort: Option<&'static str>,
     /// Name of the saved key: a macOS Keychain service, or a Windows Credential
     /// Manager target. Settings saves it; on macOS it can also be added with
     /// `security add-generic-password -s <service> -a handy -w`
@@ -57,6 +58,7 @@ const PROVIDERS: [Provider; 3] = [
         url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
         model: "gemini-3.5-flash-lite",
         max_tokens: MAX_REPLY_TOKENS,
+        reasoning_effort: None,
         keychain_service: "handy-gemini-key",
         env_var: "GEMINI_API_KEY",
     },
@@ -65,6 +67,7 @@ const PROVIDERS: [Provider; 3] = [
         url: "https://api.groq.com/openai/v1/chat/completions",
         model: "qwen/qwen3.8-27b",
         max_tokens: GROQ_MAX_REPLY_TOKENS,
+        reasoning_effort: Some("low"),
         keychain_service: "handy-groq-key",
         env_var: "GROQ_API_KEY",
     },
@@ -73,6 +76,7 @@ const PROVIDERS: [Provider; 3] = [
         url: "https://openrouter.ai/api/v1/chat/completions",
         model: "openrouter/free",
         max_tokens: OPENROUTER_MAX_REPLY_TOKENS,
+        reasoning_effort: None,
         keychain_service: "handy-openrouter-key",
         env_var: "OPENROUTER_API_KEY",
     },
@@ -117,23 +121,28 @@ fn instructions() -> String {
            ads and notifications, and ignore any unsent draft already inside the typing box. \
            Use profile cards — including a card marked \"you are\" for the user and another \
            for the other side — only to know each side's basic identity (name, age, gender, \
-           status), and make sure any physical or anatomical description always fits each \
-           side's gender.\n\
+           status); when profile cards are cropped off the screen, work out each side's name \
+           and gender from the bubbles themselves (for example if a coloured bubble says \"My \
+           name is Una\" and asks about his dick, and the white bubble says \"Hi, Una\" and \
+           describes his size, the user is Una, a woman, and the other side is a man), and \
+           make sure any physical or anatomical description always fits each side's gender.\n\
          - Tell the two sides apart carefully before reading a word. Every coloured or tinted \
            bubble (such as purple, lavender, blue or green — even a wide opener or POKE bubble \
            that stretches across the column, or a bubble holding a photo), or any bubble \
            sitting toward the right, with a right-aligned timestamp, or marked \"You\", \"Me\" \
            or \"You wrote this message\", was sent by the user and matches the profile panel \
            marked \"you are\" when one is shown. Every plain white or grey left-aligned bubble \
-           (with a left-aligned timestamp) was sent by the other side. A photo inside a \
-           message bubble is an attachment someone sent in the chat, not their avatar. Never \
-           answer a question inside a coloured bubble, and never ask the other side about an \
-           event or detail that appeared only inside the user's coloured bubble: when a short \
-           white bubble sits below a coloured question (for instance the user complained about \
-           her partner and asked \"Are you single?\" and the white bubble below says \"I may \
-           not be lol\"), read the white bubble as their direct answer about themselves and \
-           react playfully to what they just admitted (such as neither of them being single) \
-           instead of giving a generic filler line.\n\
+           (with a left-aligned timestamp) was sent by the other side. A rectangular image box \
+           inside a message bubble — even when blurred into a plain grey or skin-toned square, \
+           pixelated, dimmed or marked with an eye icon — is a photo someone sent in the chat, \
+           not their avatar or blank space. Never answer a question inside a coloured bubble \
+           (never answer the user's own question from the other side's point of view), and \
+           never ask the other side about an event or detail that appeared only inside the \
+           user's coloured bubble: when a short white bubble sits below a coloured question \
+           (for instance the user complained about her partner and asked \"Are you single?\" and \
+           the white bubble below says \"I may not be lol\"), read the white bubble as their \
+           direct answer about themselves and react playfully to what they just admitted (such \
+           as neither of them being single) instead of giving a generic filler line.\n\
          - Some screens show notes, logs or warning banners that only the user's team can \
            see, such as a yellow box, sidebars of timestamped customer log entries (labelled \
            for example UPDATES, OTHER, PERSONAL INFO, WORK, FAMILY or SEXUAL PREFERENCES under \
@@ -149,36 +158,65 @@ fn instructions() -> String {
            from the user mentioned getting together, checking a schedule or asking when they \
            are free, never continue promising to check a schedule, never say \"I will let you \
            know\", and never offer to arrange a time — acknowledge them warmly or playfully \
-           right now and steer straight into teasing or chatting about their day. When the \
-           other side thinks a meetup is already planned right now or says they are already \
-           waiting, say clearly and kindly that the user cannot make it, so they do not keep \
-           waiting. Do not invent an excuse. When the other side asks more generally whether \
-           the user wants to meet or can meet, never accept and never blurt out a cold rulebook \
-           refusal like \"I cannot meet up in person\": keep the warmth or chemistry alive by \
-           saying lightly that the thought is tempting, or that you enjoy taking your time \
-           building a connection first before rushing into anything, and ask them an engaging \
-           question so the conversation keeps going. Distinguish an actual meetup request from \
-           longing or fantasy: hypothetical \"what if\" daydreams, sexual fantasies or wistful \
-           longing in an already flirty or intimate chat — such as imagining whispering in each \
-           other's ear, waking up together, wanting each other's body in person or wishing \
-           they could travel together one day — are imagination and desire, not a meetup \
-           arrangement; and if neither side can host, turn that tension straight into explicit \
-           or playful teasing right here rather than asking how to meet or how they handle \
-           finding a place. Play along with that desire and imagination without bringing up an \
-           unprompted refusal and without ever planning, promising or hinting at a real meetup, \
-           time or place.\n\
+           and steer straight into teasing or chatting about their day. When the other side \
+           thinks a meetup is already planned right now or says they are already waiting, say \
+           clearly and kindly that the user cannot make it, so they do not keep waiting. Do \
+           not invent an excuse. Use \"cannot make it\" only when they think a meeting is \
+           already happening today or say they are already waiting at a spot. When the other \
+           side invites the user over or asks more generally whether or when they can meet or \
+           come to their place (such as \"come to my place\", \"tell me when\" or \"when can \
+           I expect you\"), never accept and never blurt out a cold or mood-killing refusal \
+           like \"I cannot meet up in person\", \"I cannot make it to your place\" or \"in my \
+           thoughts\": in an everyday or early chat, keep the warmth alive by saying lightly \
+           that the thought is tempting or that you enjoy taking your time building a \
+           connection first, and in an already sexually explicit chat, glide past the meetup \
+           logistics without promising to come over and pour that heat straight into vivid \
+           physical desire and what you would do to each other, ending with an engaging \
+           question. Distinguish an actual meetup request from longing or fantasy: hypothetical \
+           \"what if\" daydreams, sexual fantasies or wistful longing in an already flirty or \
+           intimate chat — such as imagining whispering in each other's ear, waking up \
+           together, wanting each other's body in person or wishing they could travel together \
+           one day — are imagination and desire, not a meetup arrangement; and if neither side \
+           can host, turn that tension straight into explicit or playful teasing rather than \
+           asking how to meet or how they handle finding a place. Play along with that desire \
+           and imagination without bringing up an unprompted refusal and without ever planning, \
+           promising or hinting at a real meetup, time or place.\n\
          - The user never shares personal contact details: no phone number, email address, \
            social media account or username, and no other way to reach the user outside this \
            conversation. This rule has no exceptions. Never suggest a phone call, video call \
-           or going on camera either. If the other side asks for contact details, or sends \
-           their own so the user will send theirs back, do not share anything and do not \
-           refuse outright. Dodge it lightly: say warmly that you prefer to keep chatting right \
-           here, then carry on the conversation with a question. Never repeat their details \
-           back. Use this dodge only when the other side asks for contact details, sends \
-           theirs or asks to talk somewhere else — never say you prefer to keep chatting right \
-           here when they have not asked to leave this chat. Asking to send or see a photo \
-           inside this chat is normal chatting, not contact details: welcome it warmly (keeping \
-           it wholesome if a non-sexual banner is shown), or tease about sending photos here.\n\
+           or going on camera either. If the other side asks for contact details, asks for a \
+           phone or video call (for instance saying \"give me a call\" or that they are out \
+           of credits), or sends their own so the user will send theirs back, do not share \
+           anything, never mention credits, and do not refuse outright. Dodge it lightly: say \
+           warmly that you prefer to keep chatting right here, then carry on the conversation \
+           in the exact same tone (keeping it hot and explicit if the chat is already \
+           explicit) with a question. Never repeat their details back. Use this dodge only \
+           when the other side asks for contact details, sends theirs or asks to call or talk \
+           somewhere else — never say you prefer to keep chatting right here when they have \
+           not asked to leave this chat. Asking to send or see a photo inside this chat is \
+           normal chatting, not contact details: welcome it warmly (keeping it wholesome if a \
+           non-sexual banner is shown), or tease about sending photos here.\n\
+         - Whenever the newest left-side white bubble from the other side contains a photo \
+           (look specifically at the bottom-most white bubble below the last purple/coloured \
+           bubble: if that bottom-most white bubble has a blurred dark-grey or skin-toned \
+           square or a dimmed photo with an eye icon above its text, it is a new photo they \
+           just sent — even if an earlier purple bubble also had a blurred square; whereas if \
+           a photo appeared only in an earlier white bubble higher up that already has a \
+           purple reply below it, do not thank them again for that earlier photo), always \
+           acknowledge the new photo in your very first sentence, thank them for sharing it, \
+           and compliment it — never ignore a photo in the bottom-most white bubble. When the \
+           chat is already sexually explicit (and no warning banner forbids sexual talk) and \
+           a man sends any blurred photo in that bottom-most white bubble, always treat that \
+           blurred square as a photo of his dick/cock even if his text talks about something \
+           else: compliment his huge, big or hot dick/cock explicitly by name (not merely \
+           calling it \"that photo\" or \"that hot photo\"), thank him for sharing it (for \
+           example \"Oh, wow, that is such a huge dick. Thank you for sharing.\" or \"Thank \
+           you for sharing that hot dick photo with me. Your cock looks so big.\"), answer any \
+           question in his message directly (for example if he asks \"care to share it with \
+           me?\", say yes that you care to share it with him), and end with an explicit \
+           question; when a woman sends a photo in an explicit chat, compliment how hot her \
+           photo looks; and in an everyday or non-sexual chat (or when a non-sexual banner is \
+           shown), thank them for sharing the photo and compliment it wholesomely.\n\
          - Never use the word love or any word made from it, such as loved, loving or \
            lovely, even when the other side uses it first. Use other words instead, such as \
            enjoy, like, glad or happy, or want and crave in a flirty chat.\n\
@@ -203,17 +241,21 @@ fn instructions() -> String {
            same bold, uninhibited energy — never replace them with coy euphemisms like \"right \
            there\", \"down there\", \"taste me\" or \"that sounds so good\", never stall with \
            teasers like \"do that and more\" or \"do you want to hear what I want\", and \
-           deliver vivid, explicit dirty talk in this reply right now naming the body parts \
-           and acts directly; if the chat is warmly romantic, sensual or cheeky without crude \
-           words, match that sensual or cheeky heat. React to the specific details they just \
-           wrote rather than giving a generic line, and read their whole newest message first \
-           so you never ask a question they already answered in it (for instance, do not ask \
-           which position they want to start with if they just described starting in \
-           missionary). Answer dirty talk, explicit questions and sexual fantasies head-on — \
-           never water them down, never thank them stiffly for kind words, and never dodge \
-           into innocent small talk. Express desire and excitement freely while still keeping \
-           every hard rule above: no word love, no real-life commitment, no real meetup and \
-           no contact details.\n\
+           deliver vivid, explicit dirty talk directly in this reply, naming the body parts \
+           and acts plainly; if the chat is warmly romantic, sensual or cheeky without crude \
+           words, match that sensual or cheeky heat. Vary how you open and phrase sentences \
+           naturally — prefer \"I would like you to...\", \"I'd really like you to...\", \"Oh, \
+           wow...\", \"Mmm, hearing that...\", \"Thank you for sharing...\" or \"I bet...\" \
+           rather than repeating \"I want you to\", and avoid tacking \"right now\" onto \
+           sentences. React to the specific details they just wrote rather than giving a \
+           generic line, and read their whole newest message first so you never ask a question \
+           they already answered in it (for instance, do not ask how many inches their dick is \
+           if they just wrote 7+, and do not ask which position they want to start with if \
+           they just described starting in missionary). Answer dirty talk, explicit questions \
+           and sexual fantasies head-on — never water them down, never thank them stiffly for \
+           kind words, and never dodge into innocent small talk. Express desire and excitement \
+           freely while still keeping every hard rule above: no word love, no real-life \
+           commitment, no real meetup and no contact details.\n\
          - When the user's own earlier messages on screen are not flirty or sexual (including \
            when none of the user's messages are visible yet), and the other side says they \
            have feelings for the user or sends compliments, pet names, kisses or sexual \
@@ -253,8 +295,13 @@ fn instructions() -> String {
 }
 
 /// The chat completions request body for one screenshot.
-fn build_request(model: &str, max_tokens: u32, jpeg_base64: &str) -> Value {
-    json!({
+fn build_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    jpeg_base64: &str,
+) -> Value {
+    let mut body = json!({
         "model": model,
         "max_tokens": max_tokens,
         "messages": [
@@ -270,18 +317,27 @@ fn build_request(model: &str, max_tokens: u32, jpeg_base64: &str) -> Value {
                     // love to hear more" in 3 of 10 live replies; here, 0 of 10.
                     {
                         "type": "text",
-                        "text": "Write the reply (or NO_CONVERSATION if there is no conversation on screen): two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them."
+                        "text": "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Look at the bottom-most white left-side message bubble (below the last purple/coloured bubble): if that bottom-most white bubble has a photo box inside it (including a blurred dark-grey square or an image with an eye icon above its text — do not re-thank an older photo higher up above a purple reply), open by thanking them for sharing the photo and complimenting it (complimenting his huge, big or hot dick/cock explicitly by name whenever a man sends a blurred photo in an already sexually explicit chat with no non-sexual banner). If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them."
                     }
                 ]
             }
         ]
-    })
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    body
 }
 
 /// Asks the same provider to replace "love" (and words built from it) in a
 /// draft it just wrote, without resending the screenshot.
-fn build_love_rewrite_request(model: &str, max_tokens: u32, draft: &str) -> Value {
-    json!({
+fn build_love_rewrite_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    draft: &str,
+) -> Value {
+    let mut body = json!({
         "model": model,
         "max_tokens": max_tokens,
         "messages": [
@@ -296,7 +352,11 @@ fn build_love_rewrite_request(model: &str, max_tokens: u32, draft: &str) -> Valu
             },
             { "role": "user", "content": draft }
         ]
-    })
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    body
 }
 
 /// Removes `<think>…</think>` blocks that some reasoning models put in the
@@ -316,6 +376,37 @@ fn strip_thinking(text: &str) -> String {
     out
 }
 
+/// True when a char is a Basic or Extended Latin letter (including accented
+/// letters such as é, ñ, ü, ç or ł).
+fn is_latin_letter(c: char) -> bool {
+    c.is_ascii_alphabetic() || matches!(c as u32, 0x00C0..=0x024F | 0x1E00..=0x1EFF)
+}
+
+/// Catches multilingual tokenizer glitches such as `"Wouldblingفع typically"`,
+/// where non-Latin script characters leak into a Latin word or into an
+/// overwhelmingly Latin reply.
+fn has_mixed_script_glitch(text: &str) -> bool {
+    let mut total_latin = 0usize;
+    let mut total_non_latin = 0usize;
+    for word in text.split_whitespace() {
+        let mut word_latin = false;
+        let mut word_non_latin = false;
+        for c in word.chars().filter(|c| c.is_alphabetic()) {
+            if is_latin_letter(c) {
+                word_latin = true;
+                total_latin += 1;
+            } else {
+                word_non_latin = true;
+                total_non_latin += 1;
+            }
+        }
+        if word_latin && word_non_latin {
+            return true;
+        }
+    }
+    total_non_latin > 0 && total_latin >= total_non_latin * 4
+}
+
 /// The reply text of a chat completions response.
 fn parse_reply(response: &Value) -> Result<String, String> {
     if let Some(message) = response.pointer("/error/message").and_then(Value::as_str) {
@@ -325,11 +416,15 @@ fn parse_reply(response: &Value) -> Result<String, String> {
         .pointer("/choices/0/finish_reason")
         .and_then(Value::as_str)
     {
+        let lowered = reason.to_ascii_lowercase();
         if matches!(
-            reason.to_ascii_lowercase().as_str(),
+            lowered.as_str(),
             "content_filter" | "safety" | "prohibited_content"
         ) {
             return Err(format!("blocked by provider filter ({reason})"));
+        }
+        if matches!(lowered.as_str(), "length" | "max_tokens") {
+            return Err(format!("reply was cut off ({reason})"));
         }
     }
     let content = response
@@ -343,6 +438,9 @@ fn parse_reply(response: &Value) -> Result<String, String> {
     }
     if text.eq_ignore_ascii_case("NO_CONVERSATION") {
         return Err("no conversation on screen".to_string());
+    }
+    if has_mixed_script_glitch(text) {
+        return Err(format!("the reply contained a mixed-script glitch: {text}"));
     }
     if refuses_to_reply(text) {
         return Err(format!("the model refused to write the reply: {text}"));
@@ -523,13 +621,19 @@ struct Attempt<'a> {
     url: &'a str,
     model: &'a str,
     max_tokens: u32,
+    reasoning_effort: Option<&'a str>,
     key: Option<String>,
 }
 
 /// Drafts with one provider; if the only fault is the forbidden word "love",
 /// asks the same provider once to rewrite its draft before falling back.
 fn try_attempt(attempt: &Attempt, key: &str, jpeg_base64: &str) -> Result<String, String> {
-    let body = build_request(attempt.model, attempt.max_tokens, jpeg_base64);
+    let body = build_request(
+        attempt.model,
+        attempt.max_tokens,
+        attempt.reasoning_effort,
+        jpeg_base64,
+    );
     match request_reply(attempt.url, key, &body) {
         Err(e) => match e.strip_prefix("the reply used the word love: ") {
             Some(draft) => {
@@ -537,7 +641,12 @@ fn try_attempt(attempt: &Attempt, key: &str, jpeg_base64: &str) -> Result<String
                     "{} used the word love, asking it to rewrite the reply",
                     attempt.name
                 );
-                let rewrite = build_love_rewrite_request(attempt.model, attempt.max_tokens, draft);
+                let rewrite = build_love_rewrite_request(
+                    attempt.model,
+                    attempt.max_tokens,
+                    attempt.reasoning_effort,
+                    draft,
+                );
                 request_reply(attempt.url, key, &rewrite)
             }
             None => Err(e),
@@ -896,6 +1005,7 @@ pub fn draft_reply_from_screen() -> Result<String, String> {
             url: p.url,
             model: p.model,
             max_tokens: p.max_tokens,
+            reasoning_effort: p.reasoning_effort,
             key: saved_key(p),
         })
         .collect();
@@ -917,13 +1027,17 @@ mod tests {
 
     #[test]
     fn the_request_carries_the_screenshot_as_an_image_part() {
-        let body = build_request("some-model", 1234, "AAAA");
+        let body = build_request("some-model", 1234, None, "AAAA");
         assert_eq!(body["model"], "some-model");
         assert_eq!(body["max_tokens"], 1234);
+        assert!(body.get("reasoning_effort").is_none());
         assert_eq!(body["messages"][0]["role"], "system");
         let image = &body["messages"][1]["content"][0];
         assert_eq!(image["type"], "image_url");
         assert_eq!(image["image_url"]["url"], "data:image/jpeg;base64,AAAA");
+
+        let with_effort = build_request("some-model", 800, Some("low"), "AAAA");
+        assert_eq!(with_effort["reasoning_effort"], "low");
     }
 
     #[test]
@@ -1044,6 +1158,7 @@ mod tests {
                 url: &refused_url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k1".into()),
             },
             Attempt {
@@ -1051,6 +1166,7 @@ mod tests {
                 url: &ok_url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k2".into()),
             },
         ];
@@ -1231,7 +1347,7 @@ mod tests {
         let reply = request_reply(
             &url,
             "test-key",
-            &build_request("m", MAX_REPLY_TOKENS, "QUJD"),
+            &build_request("m", MAX_REPLY_TOKENS, None, "QUJD"),
         )
         .unwrap();
         let request = server.join().unwrap();
@@ -1255,6 +1371,7 @@ mod tests {
                 url: &limited_url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k1".into()),
             },
             Attempt {
@@ -1262,6 +1379,7 @@ mod tests {
                 url: &ok_url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k2".into()),
             },
         ];
@@ -1294,6 +1412,7 @@ mod tests {
                 url: "http://127.0.0.1:9/unused",
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: None,
             },
             Attempt {
@@ -1301,6 +1420,7 @@ mod tests {
                 url: &ok_url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k2".into()),
             },
         ];
@@ -1327,6 +1447,7 @@ mod tests {
                 url: &limited_url,
                 model: "m",
                 max_tokens: GROQ_MAX_REPLY_TOKENS,
+                reasoning_effort: Some("low"),
                 key: Some("k1".into()),
             },
             Attempt {
@@ -1334,6 +1455,7 @@ mod tests {
                 url: &broke_url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k2".into()),
             },
             Attempt {
@@ -1341,6 +1463,7 @@ mod tests {
                 url: "unused",
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: None,
             },
         ];
@@ -1358,10 +1481,12 @@ mod tests {
         let groq = PROVIDERS.iter().find(|p| p.name == "Groq").unwrap();
         let openrouter = PROVIDERS.iter().find(|p| p.name == "OpenRouter").unwrap();
         assert_eq!(gemini.max_tokens, 2000);
+        assert!(gemini.reasoning_effort.is_none());
         assert!(
             groq.max_tokens <= 1000,
             "Groq free tier caps output reservation at 1,000 OTPM"
         );
+        assert_eq!(groq.reasoning_effort, Some("low"));
         assert!(
             openrouter.max_tokens >= 4000,
             "OpenRouter free reasoning vision models spend ~3,500 tokens thinking"
@@ -1380,6 +1505,7 @@ mod tests {
                 url: &empty_url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k1".into()),
             },
             Attempt {
@@ -1387,6 +1513,7 @@ mod tests {
                 url: "http://127.0.0.1:9/must-not-be-called",
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k2".into()),
             },
         ];
@@ -1459,6 +1586,7 @@ mod tests {
                 url: &url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k1".into()),
             },
             Attempt {
@@ -1466,6 +1594,7 @@ mod tests {
                 url: "http://127.0.0.1:9/must-not-be-called",
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k2".into()),
             },
         ];
@@ -1499,6 +1628,7 @@ mod tests {
                 url: &first_url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k1".into()),
             },
             Attempt {
@@ -1506,6 +1636,7 @@ mod tests {
                 url: &second_url,
                 model: "m",
                 max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
                 key: Some("k2".into()),
             },
         ];
@@ -1530,20 +1661,58 @@ mod tests {
         assert!(text.contains("ending with a question mark (?)"));
     }
 
+    #[test]
+    fn the_instructions_acknowledge_sent_photos_and_infer_identity_when_cards_are_cropped() {
+        let text = instructions();
+        assert!(text.contains(
+            "Whenever the newest left-side white bubble from the other side contains a photo"
+        ));
+        assert!(text.contains("blurred dark-grey or skin-toned square"));
+        assert!(text.contains("always acknowledge the new photo in your very first sentence"));
+        assert!(text.contains("thank them for sharing it"));
+        assert!(text.contains("when profile cards are cropped off the screen"));
+        assert!(text.contains("give me a call"));
+        assert!(text.contains("I cannot make it to your place"));
+        assert!(text.contains("Vary how you open and phrase sentences naturally"));
+    }
+
+    #[test]
+    fn truncated_or_mixed_script_glitch_replies_are_never_typed() {
+        for response in [
+            json!({ "choices": [{ "finish_reason": "length", "message": { "content": "Oh, wow, thank you for" } }] }),
+            json!({ "choices": [{ "finish_reason": "max_tokens", "message": { "content": "I would really like" } }] }),
+            json!({ "choices": [{ "finish_reason": "stop", "message": { "content": "Wouldblingفع typically" } }] }),
+            json!({ "choices": [{ "finish_reason": "stop", "message": { "content": "I would really like فع to hear more about your day?" } }] }),
+        ] {
+            assert!(parse_reply(&response).is_err(), "{response}");
+        }
+
+        for valid in [
+            "I'd really enjoy a café au lait on a sunny break! What kind of coffee do you drink?",
+            "مرحبا كيف حالك اليوم؟",
+        ] {
+            let response = json!({ "choices": [{ "finish_reason": "stop", "message": { "content": valid } }] });
+            assert_eq!(parse_reply(&response).unwrap(), valid);
+        }
+    }
+
     /// Runs `draft_with_fallback` against every `.jpg` / `.jpeg` screenshot in
-    /// `SCENARIO_DIR` (optionally filtered by `SCENARIO_FILTER`).
+    /// `SCENARIO_DIR` (optionally filtered by `SCENARIO_FILTER` and `PROVIDER_FILTER`).
     #[test]
     #[ignore]
     fn draft_scenarios_from_folder() {
         let dir = std::env::var("SCENARIO_DIR").expect("set SCENARIO_DIR to a folder of JPEGs");
         let filter = std::env::var("SCENARIO_FILTER").unwrap_or_default();
+        let provider_filter = std::env::var("PROVIDER_FILTER").unwrap_or_default();
         let attempts: Vec<Attempt> = PROVIDERS
             .iter()
+            .filter(|p| provider_filter.is_empty() || p.name.eq_ignore_ascii_case(&provider_filter))
             .map(|p| Attempt {
                 name: p.name,
                 url: p.url,
                 model: p.model,
                 max_tokens: p.max_tokens,
+                reasoning_effort: p.reasoning_effort,
                 key: saved_key(p),
             })
             .collect();
