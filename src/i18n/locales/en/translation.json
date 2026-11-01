@@ -38,7 +38,14 @@
         "title": "Microphone",
         "description": "Select your preferred microphone device",
         "placeholder": "Select microphone...",
-        "loading": "Loading..."
+        "loading": "Loading...",
+        "phone": "Phone (Wi-Fi)",
+        "phoneScan": "Scan this code with your phone's camera and open the page in Chrome.",
+        "phoneConnected": "Phone connected",
+        "phoneWaiting": "Waiting for the phone…",
+        "phoneFirewall": "The first time, Windows may ask to allow Chatelle on private networks. Allow it.",
+        "phoneNewCode": "New code",
+        "phoneCertNote": "Chrome warns that the connection is not private. Tap Advanced, then Proceed. This is expected."
       }
     },
     "advanced": {

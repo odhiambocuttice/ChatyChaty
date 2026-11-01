@@ -4,11 +4,14 @@ import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ResetButton } from "../ui/ResetButton";
 import { useSettings } from "../../hooks/useSettings";
+import { PhoneMicrophonePanel } from "./PhoneMicrophonePanel";
 
 interface MicrophoneSelectorProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
 }
+
+const PHONE_MICROPHONE = "phone-wifi";
 
 /** The microphone list, as a dropdown: Settings' selector, and Try it's. */
 export const MicrophoneDropdown: React.FC<{
@@ -39,7 +42,10 @@ export const MicrophoneDropdown: React.FC<{
 
   const microphoneOptions = audioDevices.map((device) => ({
     value: device.name,
-    label: device.name,
+    label:
+      device.name === PHONE_MICROPHONE
+        ? t("settings.sound.microphone.phone")
+        : device.name,
   }));
 
   return (
@@ -87,6 +93,7 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
             disabled={isUpdating("selected_microphone") || isLoading}
           />
         </div>
+        <PhoneMicrophonePanel />
       </SettingContainer>
     );
   },
