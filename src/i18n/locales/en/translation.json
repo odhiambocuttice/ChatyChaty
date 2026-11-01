@@ -197,5 +197,14 @@
     "openSettings": "Open settings",
     "allowed": "Allowed",
     "waiting": "Waiting"
+  },
+  "phonePage": {
+    "record": "Record",
+    "stop": "Stop",
+    "connected": "Connected",
+    "reconnecting": "Reconnecting…",
+    "recording": "Recording…",
+    "transcribing": "Transcribing…",
+    "micDenied": "Chrome blocked the microphone. Allow it in the site settings and reload."
   }
 }
