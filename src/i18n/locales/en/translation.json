@@ -143,6 +143,7 @@
     },
     "noInputDeviceTitle": "No Microphone Found",
     "noInputDevice": "No audio input device was detected. Please connect a microphone or headset and try again.",
+    "phoneNotConnected": "Phone not connected — scan the QR code in Settings",
     "recordingFailed": "Failed to start recording: {{error}}",
     "modelLoadFailed": "Failed to load the speech model",
     "transcriptionFailedTitle": "Transcription Failed",

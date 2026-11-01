@@ -9,6 +9,8 @@ use crate::audio_toolkit::{
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
 use crate::media::{self, PausedMedia};
+use crate::phone::capture::{PhoneCapture, PhoneStartError};
+use crate::phone::{PhoneMicrophone, PHONE_MICROPHONE};
 use crate::settings::{get_settings, write_settings, AppSettings, VadBackend};
 use crate::utils;
 use handy_recorder::{Channels, EndReason, ErrorKind, Recorder, RecorderConfig, StartError};
@@ -46,6 +48,18 @@ enum DesiredMicrophone {
     Default,
     Selected(String),
     Clamshell(String),
+    /// The phone over Wi-Fi. It is not a system device, so it is never
+    /// resolved, never reported unavailable and never reset to Default.
+    Phone,
+}
+
+/// The preference for `selected_microphone`, without the clamshell check.
+fn desired_from(selected: Option<&str>) -> DesiredMicrophone {
+    match selected {
+        Some(PHONE_MICROPHONE) => DesiredMicrophone::Phone,
+        Some(name) => DesiredMicrophone::Selected(name.to_string()),
+        None => DesiredMicrophone::Default,
+    }
 }
 
 /// Result of resolving the persisted preference to a recorder device ID.
@@ -71,11 +85,21 @@ enum VadSlot {
     },
 }
 
+/// Where an open microphone's audio comes from.
+enum MicSource {
+    /// Boxed: a recorder is about 440 bytes, a phone capture one pointer.
+    Device(Box<Recorder<CaptureSink>>),
+    /// The shared phone capture. The phone server feeds it; this side only
+    /// starts and stops recordings on it.
+    Phone(PhoneCapture<CaptureSink>),
+}
+
 /// An open microphone: the stream is running whether or not it is recording.
 struct OpenMicrophone {
-    recorder: Recorder<CaptureSink>,
+    source: MicSource,
     /// Set when this recorder fails. Its own flag, so a failure handler that
-    /// runs late can't mark a replacement recorder failed.
+    /// runs late can't mark a replacement recorder failed. A phone disconnect
+    /// never sets it: a reconnecting phone feeds the same recording.
     failed: Arc<AtomicBool>,
 }
 
@@ -88,6 +112,12 @@ impl OpenMicrophone {
 /// The `recording-error` event's `error_type` for a recording that couldn't
 /// start.
 pub fn recording_error_type(error: &anyhow::Error) -> &'static str {
+    if matches!(
+        error.downcast_ref::<PhoneStartError>(),
+        Some(PhoneStartError::NotConnected)
+    ) {
+        return "phone_not_connected";
+    }
     match error
         .downcast_ref::<handy_recorder::Error>()
         .map(handy_recorder::Error::kind)
@@ -197,7 +227,10 @@ fn open_microphone(config: RecorderConfig) -> Result<OpenMicrophone, handy_recor
         // start; a recording in progress keeps the audio captured before it.
         move |_| failed.store(true, Ordering::Release)
     })?;
-    Ok(OpenMicrophone { recorder, failed })
+    Ok(OpenMicrophone {
+        source: MicSource::Device(Box::new(recorder)),
+        failed,
+    })
 }
 
 /// Opens with the selected channel, or averages all channels if the device
@@ -335,6 +368,11 @@ impl AudioRecordingManager {
     /// clamshell probe (an `ioreg` subprocess, ~10-20ms) when a clamshell
     /// microphone is actually configured.
     fn desired_microphone(&self, settings: &AppSettings) -> DesiredMicrophone {
+        let desired = desired_from(settings.selected_microphone.as_deref());
+        // The phone wins over a clamshell microphone.
+        if matches!(desired, DesiredMicrophone::Phone) {
+            return desired;
+        }
         if let Some(clamshell_microphone) = &settings.clamshell_microphone {
             let clamshell_started = Instant::now();
             let is_clamshell = clamshell::is_clamshell().unwrap_or(false);
@@ -347,19 +385,25 @@ impl AudioRecordingManager {
                 return DesiredMicrophone::Clamshell(clamshell_microphone.clone());
             }
         }
-        match &settings.selected_microphone {
-            Some(name) => DesiredMicrophone::Selected(name.clone()),
-            None => DesiredMicrophone::Default,
-        }
+        desired
     }
 
     pub fn invalidate_device_cache(&self) {
         *self.cached_device.lock().unwrap() = None;
     }
 
-    fn resolve_microphone_device(&self, settings: &AppSettings) -> MicrophoneResolution {
-        let desired = self.desired_microphone(settings);
+    fn resolve_microphone_device(&self, desired: DesiredMicrophone) -> MicrophoneResolution {
         let (device_name, selected_microphone) = match desired {
+            // `start_microphone_stream` opens the phone before it resolves a
+            // device, so this is not reached. Keep the preference anyway.
+            DesiredMicrophone::Phone => {
+                warn!("device resolve: the phone is not a system device; using the system default");
+                return MicrophoneResolution {
+                    device: None,
+                    from_cache: false,
+                    unavailable_selected_microphone: None,
+                };
+            }
             DesiredMicrophone::Default => {
                 debug!("device resolve: no mic configured -> system default");
                 return MicrophoneResolution {
@@ -585,7 +629,15 @@ impl AudioRecordingManager {
         // input devices at all fails inside open() with `DeviceUnavailable`.
         let settings = get_settings(&self.app_handle);
         let resolve_started = Instant::now();
-        let mut resolution = self.resolve_microphone_device(&settings);
+        let desired = self.desired_microphone(&settings);
+        if matches!(desired, DesiredMicrophone::Phone) {
+            let microphone = self.open_phone_microphone()?;
+            *self.recorder.lock().unwrap() = Some(microphone);
+            *open_flag = true;
+            info!("Phone microphone ready in {:?}", start_time.elapsed());
+            return Ok(());
+        }
+        let mut resolution = self.resolve_microphone_device(desired);
         let resolve_elapsed = resolve_started.elapsed();
 
         // Ensure VAD is loaded if it wasn't for whatever reason; its frame
@@ -607,7 +659,7 @@ impl AudioRecordingManager {
                 // surfacing the error.
                 warn!("Recorder open failed ({first_err}); re-resolving device and retrying once");
                 self.invalidate_device_cache();
-                resolution = self.resolve_microphone_device(&settings);
+                resolution = self.resolve_microphone_device(self.desired_microphone(&settings));
                 open_microphone_on_channel(resolution.device.clone(), channel, frames_per_chunk)
             }
             result => result,
@@ -636,6 +688,21 @@ impl AudioRecordingManager {
         Ok(())
     }
 
+    /// The shared phone capture, with VAD-sized chunks. There is no device to
+    /// open: whether a phone is connected is checked when a recording starts.
+    fn open_phone_microphone(&self) -> Result<OpenMicrophone, anyhow::Error> {
+        let phone = self
+            .app_handle
+            .try_state::<Arc<PhoneMicrophone>>()
+            .ok_or_else(|| anyhow::anyhow!("The phone microphone is not set up"))?;
+        let capture = phone.capture();
+        capture.set_frames_per_chunk(self.vad_frame_samples()?);
+        Ok(OpenMicrophone {
+            source: MicSource::Phone(capture),
+            failed: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
     pub fn stop_microphone_stream(&self) {
         let mut open_flag = self.is_open.lock().unwrap();
         if !*open_flag {
@@ -661,15 +728,36 @@ impl AudioRecordingManager {
             let _ = self.collect_recording(&microphone);
             *is_recording = false;
         }
-        if let Err(e) = microphone.recorder.close() {
-            warn!("Closing the microphone failed: {e}");
+        match microphone.source {
+            MicSource::Device(recorder) => {
+                if let Err(e) = recorder.close() {
+                    warn!("Closing the microphone failed: {e}");
+                }
+            }
+            // Only this handle goes. `PhoneMicrophone::sync` owns the server.
+            MicSource::Phone(_) => {}
         }
     }
 
     /// Stops the recording on `microphone`, returning its audio and taking
     /// back the detector it borrowed.
     fn collect_recording(&self, microphone: &OpenMicrophone) -> Vec<f32> {
-        match microphone.recorder.stop() {
+        let recorder = match &microphone.source {
+            MicSource::Device(recorder) => recorder,
+            MicSource::Phone(capture) => {
+                return match capture.stop() {
+                    Some(sink) => self.finish_capture(sink),
+                    None => {
+                        // The recording and its detector are lost.
+                        error!("The phone microphone was not recording");
+                        self.last_input_silent.store(false, Ordering::Release);
+                        *self.vad.lock().unwrap() = VadSlot::Unloaded;
+                        Vec::new()
+                    }
+                };
+            }
+        };
+        match recorder.stop() {
             Ok(stopped) => {
                 match &stopped.end_reason {
                     EndReason::StopCalled => {}
@@ -687,11 +775,7 @@ impl AudioRecordingManager {
                         stopped.dropped_frames
                     );
                 }
-                let captured = stopped.sink.finish();
-                self.return_vad(captured.vad);
-                self.last_input_silent
-                    .store(captured.input_silent, Ordering::Release);
-                captured.samples
+                self.finish_capture(stopped.sink)
             }
             Err(e) => {
                 // The recording and its detector are lost with the sink.
@@ -704,6 +788,15 @@ impl AudioRecordingManager {
                 Vec::new()
             }
         }
+    }
+
+    /// A stopped recording's audio. Takes back the detector the sink borrowed.
+    fn finish_capture(&self, sink: CaptureSink) -> Vec<f32> {
+        let captured = sink.finish();
+        self.return_vad(captured.vad);
+        self.last_input_silent
+            .store(captured.input_silent, Ordering::Release);
+        captured.samples
     }
 
     /* ---------- mode switching --------------------------------------------- */
@@ -787,8 +880,26 @@ impl AudioRecordingManager {
                 self.return_vad(sink.into_vad());
                 return Err(anyhow::anyhow!("Recorder not available"));
             };
-            match microphone.recorder.start(sink) {
-                Ok(()) => {
+            let start_error = match &microphone.source {
+                MicSource::Device(recorder) => match recorder.start(sink) {
+                    Ok(()) => None,
+                    Err(StartError { error, sink }) => {
+                        self.return_vad(sink.into_vad());
+                        Some(error)
+                    }
+                },
+                MicSource::Phone(capture) => {
+                    if let Err((error, sink)) = capture.start(sink) {
+                        self.return_vad(sink.into_vad());
+                        // No reopen: only the phone scanning the QR code
+                        // connects it.
+                        return Err(anyhow::Error::new(error));
+                    }
+                    None
+                }
+            };
+            match start_error {
+                None => {
                     let generation = self.capture_generation.fetch_add(1, Ordering::AcqRel) + 1;
                     *self.is_recording.lock().unwrap() = true;
                     self.set_state(
@@ -803,8 +914,7 @@ impl AudioRecordingManager {
                         generation,
                     });
                 }
-                Err(StartError { error, sink }) => {
-                    self.return_vad(sink.into_vad());
+                Some(error) => {
                     if reopened || error.kind() == ErrorKind::AlreadyRecording {
                         return Err(anyhow::Error::new(error).context("Failed to start recorder"));
                     }
@@ -1083,6 +1193,31 @@ mod tests {
             recording_error_type(&anyhow::anyhow!("Already recording")),
             "unknown"
         );
+    }
+
+    #[test]
+    fn phone_name_maps_to_phone() {
+        assert!(matches!(
+            desired_from(Some(PHONE_MICROPHONE)),
+            DesiredMicrophone::Phone
+        ));
+        assert!(matches!(
+            desired_from(Some("USB Mic")),
+            DesiredMicrophone::Selected(name) if name == "USB Mic"
+        ));
+        assert!(matches!(desired_from(None), DesiredMicrophone::Default));
+    }
+
+    #[test]
+    fn phone_error_type() {
+        assert_eq!(
+            recording_error_type(&anyhow::anyhow!(PhoneStartError::NotConnected)),
+            "phone_not_connected"
+        );
+        // Still found through added context.
+        let wrapped =
+            anyhow::anyhow!(PhoneStartError::NotConnected).context("Failed to start recording");
+        assert_eq!(recording_error_type(&wrapped), "phone_not_connected");
     }
 
     #[test]

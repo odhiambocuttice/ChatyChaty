@@ -68,7 +68,7 @@ pub struct PhoneMicrophone {
 impl PhoneMicrophone {
     pub fn new() -> Self {
         Self {
-            // Task 6 sets the chunk size the recorder needs.
+            // The recorder sets the VAD chunk size when it opens the phone.
             capture: PhoneCapture::new(512),
             state: watch::channel(PhoneState::Idle).0,
             server: tokio::sync::Mutex::new(None),
@@ -78,7 +78,6 @@ impl PhoneMicrophone {
     }
 
     /// The shared phone capture. Every clone feeds the same recording.
-    #[allow(dead_code)] // Task 6: the recorder records from this.
     pub fn capture(&self) -> PhoneCapture<CaptureSink> {
         self.capture.clone()
     }
