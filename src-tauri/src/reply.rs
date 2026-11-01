@@ -196,6 +196,35 @@ fn instructions() -> String {
            not asked to leave this chat. Asking to send or see a photo inside this chat is \
            normal chatting, not contact details: welcome it warmly (keeping it wholesome if a \
            non-sexual banner is shown), or tease about sending photos here.\n\
+         - The user's first name and home city or state are not contact details. When the \
+           other side asks for the user's name or location (for instance \"NAME, LOCATION\" \
+           or \"where are you from?\"), or says they are leaving because the user never gave \
+           them, give them plainly: the first name and city shown on the user's own profile \
+           card (the card marked \"you are\") or already given in the user's earlier coloured \
+           bubbles, such as \"My name is Hillary and I am from Charlotte.\" Never give a \
+           surname, street, address, workplace, phone number or other contact detail, and \
+           never invent a name or city that is not on screen: if neither is shown, skip the \
+           name and keep them hooked another way.\n\
+         - Keep the other side hooked. When they say goodbye, threaten to leave, sound \
+           annoyed or accuse the user of only wanting to sext or of not being real, never \
+           let them go and never sulk or argue: answer exactly what they felt was missing \
+           (such as giving the first name and city), say warmly why you are here and that you \
+           enjoy talking with them, add one specific, inviting detail about yourself, and end \
+           with a question that is easy and tempting to answer (for example \"My name is \
+           Hillary and I am from Charlotte. I am here for real pleasure and great company, \
+           and I enjoy a man who knows what he wants. What is your name, and what made you \
+           message me?\").\n\
+         - Keep the conversation varied instead of sticking to one subject. When one topic \
+           has run for two or three exchanges, or the other side gives short, low-energy \
+           answers (such as \"Sure, that is nice\", \"Yes\", \"No, not really\" or \"Just \
+           a great scent\"), do not ask yet another question about the same thing. React \
+           briefly to their answer in a few words, then move to a fresh, related subject \
+           that opens them up, such as their tastes in food, music, travel, work, hobbies, \
+           weekends or (in a flirty chat) what they find attractive in a woman, for example \
+           \"It really is all about finding that nice balance. Enough about perfumes. Do you \
+           have the same taste in everything?\" or \"Of course, nobody has the same taste in \
+           everything. What is your taste in food or in women?\". Ask open questions that \
+           invite them to tell a story, not questions they can answer with one word.\n\
          - Whenever the newest left-side white bubble from the other side contains a photo \
            (look specifically at the bottom-most white bubble below the last purple/coloured \
            bubble: if that bottom-most white bubble has a blurred dark-grey or skin-toned \
@@ -276,8 +305,9 @@ fn instructions() -> String {
          - If the other side asks the user a question about themselves, such as what they \
            like or what they enjoy doing, or asks casually about a photo the user sent (such \
            as where a holiday or boat picture was taken), answer it in one short, general \
-           sentence first, without names, places or other details (for example down by the \
-           harbour on a sunny break), rather than ignoring their question. Then ask something \
+           sentence first, without private details such as a surname, address or the exact \
+           spot (for example down by the harbour on a sunny break; the first name and city \
+           rule above still applies), rather than ignoring their question. Then ask something \
            back.\n\
          - Write a full reply, usually two to four sentences (around 90 to 200 characters, \
            never a terse one-liner under 80 characters): answer every question and point in \
@@ -317,7 +347,7 @@ fn build_request(
                     // love to hear more" in 3 of 10 live replies; here, 0 of 10.
                     {
                         "type": "text",
-                        "text": "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Look at the bottom-most white left-side message bubble (below the last purple/coloured bubble): if that bottom-most white bubble has a photo box inside it (including a blurred dark-grey square or an image with an eye icon above its text — do not re-thank an older photo higher up above a purple reply), open by thanking them for sharing the photo and complimenting it (complimenting his huge, big or hot dick/cock explicitly by name whenever a man sends a blurred photo in an already sexually explicit chat with no non-sexual banner). If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them."
+                        "text": "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Look at the bottom-most white left-side message bubble (below the last purple/coloured bubble): if that bottom-most white bubble has a photo box inside it (including a blurred dark-grey square or an image with an eye icon above its text — do not re-thank an older photo higher up above a purple reply), open by thanking them for sharing the photo and complimenting it (complimenting his huge, big or hot dick/cock explicitly by name whenever a man sends a blurred photo in an already sexually explicit chat with no non-sexual banner). If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. If that bottom-most white bubble says goodbye, threatens to leave, complains that the user only wants to sext, or asks for the user's name or location, respond to that first and directly: give the user's first name and city from the user's 'you are' profile card or earlier coloured bubbles if shown (never invent them), say warmly that you enjoy talking with them and want to get to know them, and end with an easy, tempting question that keeps them chatting. If the other side has been giving short one-line answers on the same topic, react briefly and switch to a fresh subject. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them."
                     }
                 ]
             }
@@ -407,6 +437,40 @@ fn has_mixed_script_glitch(text: &str) -> bool {
     total_non_latin > 0 && total_latin >= total_non_latin * 4
 }
 
+/// Rewrites "I want" as "I would like" (and "I really want" as "I would really
+/// like", "I wanna" as "I would like to"). The person asked for the softer
+/// wording, and live drafts kept opening with "I want you to" whatever the
+/// prompt said. Words such as "wanted" or "wants" are left alone.
+fn prefer_would_like(text: &str) -> String {
+    const SWAPS: [(&str, &str); 3] = [
+        ("I really want", "I would really like"),
+        ("I wanna", "I would like to"),
+        ("I want", "I would like"),
+    ];
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut rest = text;
+    'outer: while !rest.is_empty() {
+        let at_word_start = out.chars().next_back().is_none_or(|c| !c.is_alphanumeric());
+        if at_word_start {
+            for (from, to) in SWAPS {
+                if let Some(after) = rest.strip_prefix(from) {
+                    if !after.starts_with(|c: char| c.is_alphanumeric()) {
+                        out.push_str(to);
+                        rest = after;
+                        continue 'outer;
+                    }
+                }
+            }
+        }
+        let mut chars = rest.chars();
+        if let Some(c) = chars.next() {
+            out.push(c);
+        }
+        rest = chars.as_str();
+    }
+    out
+}
+
 /// The reply text of a chat completions response.
 fn parse_reply(response: &Value) -> Result<String, String> {
     if let Some(message) = response.pointer("/error/message").and_then(Value::as_str) {
@@ -454,7 +518,7 @@ fn parse_reply(response: &Value) -> Result<String, String> {
     if uses_the_word_love(text) {
         return Err(format!("the reply used the word love: {text}"));
     }
-    Ok(text.to_string())
+    Ok(prefer_would_like(text))
 }
 
 /// Phrases that appear when a model refuses the prompt instead of writing the
@@ -1674,6 +1738,37 @@ mod tests {
         assert!(text.contains("give me a call"));
         assert!(text.contains("I cannot make it to your place"));
         assert!(text.contains("Vary how you open and phrase sentences naturally"));
+    }
+
+    #[test]
+    fn i_want_is_always_typed_as_i_would_like() {
+        for (draft, typed) in [
+            (
+                "I want you to bury that cock deep inside me. What position do you want?",
+                "I would like you to bury that cock deep inside me. What position do you want?",
+            ),
+            (
+                "Mmm, I really want to taste you. Is that what I want? Yes, I want.",
+                "Mmm, I would really like to taste you. Is that what I would like? Yes, I would like.",
+            ),
+            ("I wanna feel you. I wanted it too.", "I would like to feel you. I wanted it too."),
+            ("HI wanting nothing, AI wants more.", "HI wanting nothing, AI wants more."),
+        ] {
+            let response = json!({ "choices": [{ "message": { "content": draft } }] });
+            assert_eq!(parse_reply(&response).unwrap(), typed);
+        }
+    }
+
+    #[test]
+    fn the_instructions_keep_them_hooked_share_first_name_and_city_and_vary_topics() {
+        let text = instructions();
+        assert!(
+            text.contains("The user's first name and home city or state are not contact details")
+        );
+        assert!(text.contains("never invent a name or city that is not on screen"));
+        assert!(text.contains("Keep the other side hooked"));
+        assert!(text.contains("Keep the conversation varied instead of sticking to one subject"));
+        assert!(text.contains("Enough about perfumes"));
     }
 
     #[test]
