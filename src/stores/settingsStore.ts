@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings as Settings,
   AudioDevice,
+  SpeechModel,
   TypingSpeed,
 } from "@/bindings";
 import { commands } from "@/bindings";
@@ -56,6 +57,8 @@ const settingUpdaters: {
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
   typing_speed: (value) =>
     commands.changeTypingSpeedSetting(value as TypingSpeed),
+  speech_model: (value) =>
+    commands.changeSpeechModelSetting(value as SpeechModel),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

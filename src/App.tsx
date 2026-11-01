@@ -16,6 +16,7 @@ import {
   ReplyProviderKeys,
   ShortcutInput,
   ShowOverlay,
+  SpeechModelPicker,
   StartHidden,
   TypingSpeed,
 } from "./components/settings";
@@ -284,11 +285,16 @@ function App() {
                 </>
               )}
               {tab === "model" && (
-                <SettingsGroup title={t("settings.groups.speechModel")}>
-                  <ErrorBoundary context="Model">
-                    <ModelStatus />
-                  </ErrorBoundary>
-                </SettingsGroup>
+                <>
+                  <SettingsGroup title={t("settings.groups.speechModel")}>
+                    <SpeechModelPicker />
+                  </SettingsGroup>
+                  <SettingsGroup title={t("settings.groups.modelStatus")}>
+                    <ErrorBoundary context="Model">
+                      <ModelStatus />
+                    </ErrorBoundary>
+                  </SettingsGroup>
+                </>
               )}
             </div>
           </div>

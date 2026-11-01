@@ -6,3 +6,4 @@ export { StartHidden } from "./StartHidden";
 export { AutostartToggle } from "./AutostartToggle";
 export { TypingSpeed } from "./TypingSpeed";
 export { ReplyProviderKeys } from "./ReplyProviderKeys";
+export { SpeechModelPicker } from "./SpeechModelPicker";

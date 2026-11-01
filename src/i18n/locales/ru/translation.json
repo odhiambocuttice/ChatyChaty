@@ -111,7 +111,12 @@
       "recording": "Recording",
       "overlay": "Overlay",
       "startup": "Startup",
-      "speechModel": "Speech model"
+      "speechModel": "Speech model",
+      "modelStatus": "Status"
+    },
+    "speechModel": {
+      "liveDetails": "{{size}} MB · Types as you speak",
+      "afterStopDetails": "{{size}} MB · Types after you stop, with fewer errors"
     }
   },
   "common": {

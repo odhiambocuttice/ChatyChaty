@@ -1,4 +1,4 @@
-//! Speech-to-text with the one pinned model.
+//! Speech-to-text with the model picked in settings.
 //!
 //! The model is loaded when the app starts and then stays loaded (unless the
 //! unload timeout says otherwise). A recording is decoded live while it goes
@@ -344,12 +344,31 @@ impl TranscriptionManager {
     }
 
     /// Whether a recording is expected to decode live. The loaded model says
-    /// so; before it has loaded, the pinned model is known to stream.
+    /// so; before it has loaded, the selected model's pin does.
     pub fn expects_streaming(&self) -> bool {
         self.engine
             .loaded()
             .map(|info| info.capabilities.supports_streaming)
-            .unwrap_or(true)
+            .unwrap_or_else(|| self.model_manager.selected().streams)
+    }
+
+    /// Drop the loaded model so the next load picks up the one now selected.
+    /// Waits for a load under way first, so it cannot land after the unload.
+    pub fn unload_model(&self) {
+        {
+            let mut is_loading = self.is_loading.lock().unwrap();
+            while *is_loading {
+                is_loading = self.loading_condvar.wait(is_loading).unwrap();
+            }
+        }
+        let _ = self.engine.unload();
+        let _ = self.app_handle.emit(
+            "model-state-changed",
+            ModelStateEvent {
+                event_type: "unloaded".to_string(),
+                error: None,
+            },
+        );
     }
 
     /// Whether a live streaming run is currently in flight.
