@@ -1,6 +1,7 @@
 use crate::audio_feedback;
 use crate::audio_toolkit::audio::list_output_devices;
 use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
+use crate::phone::PhoneMicrophone;
 use crate::settings::{get_settings, write_settings};
 use log::warn;
 use serde::{Deserialize, Serialize};
@@ -272,6 +273,12 @@ pub async fn get_available_microphones() -> Result<Vec<AudioDevice>, String> {
                 }),
         );
 
+        result.push(AudioDevice {
+            index: crate::phone::PHONE_MICROPHONE.to_string(),
+            name: crate::phone::PHONE_MICROPHONE.to_string(),
+            is_default: false,
+        });
+
         Ok::<_, String>(result)
     })
     .await
@@ -293,10 +300,15 @@ pub async fn set_selected_microphone(app: AppHandle, device_name: String) -> Res
     // can restart the cpal stream (blocking CoreAudio) — run it on a blocking
     // thread, not inline on the webview/main run loop.
     let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
-    tokio::task::spawn_blocking(move || rm.update_selected_device())
+    let updated = tokio::task::spawn_blocking(move || rm.update_selected_device())
         .await
         .map_err(|e| format!("audio task join failed: {}", e))?
-        .map_err(|e| format!("Failed to update selected device: {}", e))
+        .map_err(|e| format!("Failed to update selected device: {}", e));
+
+    // Start or stop the phone server even if the device update failed.
+    let phone = app.state::<Arc<PhoneMicrophone>>().inner().clone();
+    phone.sync(&app).await;
+    updated
 }
 
 #[tauri::command]

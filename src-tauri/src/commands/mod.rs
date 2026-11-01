@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod models;
+pub mod phone;
 
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
 use crate::utils::cancel_current_operation;

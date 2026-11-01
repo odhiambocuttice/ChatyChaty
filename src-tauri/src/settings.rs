@@ -296,6 +296,13 @@ pub struct AppSettings {
     pub typing_speed: TypingSpeed,
     #[serde(default)]
     pub speech_model: SpeechModel,
+    /// Pairing token for the phone microphone. Made the first time the phone
+    /// microphone is selected.
+    #[serde(default)]
+    pub phone_microphone_token: Option<String>,
+    /// The port the phone microphone server last listened on.
+    #[serde(default)]
+    pub phone_microphone_port: Option<u16>,
 }
 
 fn default_hold_threshold_ms() -> u64 {
@@ -440,6 +447,8 @@ pub fn get_default_settings() -> AppSettings {
         overlay_style: default_overlay_style(),
         typing_speed: TypingSpeed::default(),
         speech_model: SpeechModel::default(),
+        phone_microphone_token: None,
+        phone_microphone_port: None,
     }
 }
 
@@ -793,6 +802,17 @@ mod tests {
         stored.as_object_mut().unwrap().remove("speech_model");
         let settings: AppSettings = serde_json::from_value(stored).unwrap();
         assert_eq!(settings.speech_model, SpeechModel::Parakeet);
+    }
+
+    #[test]
+    fn phone_microphone_fields_default_to_none() {
+        let mut stored = default_settings_json();
+        let object = stored.as_object_mut().unwrap();
+        object.remove("phone_microphone_token");
+        object.remove("phone_microphone_port");
+        let settings: AppSettings = serde_json::from_value(stored).unwrap();
+        assert_eq!(settings.phone_microphone_token, None);
+        assert_eq!(settings.phone_microphone_port, None);
     }
 
     #[test]

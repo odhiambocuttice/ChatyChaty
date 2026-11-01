@@ -1,4 +1,5 @@
 use crate::input;
+use crate::phone::{self, protocol::PhoneState};
 use crate::settings;
 use crate::settings::{OverlayPosition, OverlayStyle};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -612,16 +613,19 @@ pub fn emit_recording_ready(app_handle: &AppHandle) {
 
 /// Shows the recording overlay window with fade-in animation
 pub fn show_recording_overlay(app_handle: &AppHandle) {
+    phone::notify_state(app_handle, PhoneState::Recording);
     show_overlay_state(app_handle, "recording");
 }
 
 /// Shows the larger streaming overlay that displays live transcription text
 pub fn show_streaming_overlay(app_handle: &AppHandle) {
+    phone::notify_state(app_handle, PhoneState::Recording);
     show_overlay_state(app_handle, "streaming");
 }
 
 /// Shows the transcribing overlay window
 pub fn show_transcribing_overlay(app_handle: &AppHandle) {
+    phone::notify_state(app_handle, PhoneState::Transcribing);
     show_overlay_state(app_handle, "transcribing");
 }
 
@@ -682,6 +686,7 @@ static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Hides the recording overlay window with fade-out animation
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    phone::notify_state(app_handle, PhoneState::Idle);
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {

@@ -114,9 +114,18 @@ pub struct RunningServer {
 
 impl RunningServer {
     /// Stops accepting, closes the live connection and marks the phone disconnected.
-    pub fn stop(self) {
+    ///
+    /// Returns after the listening socket is closed, so the port is free again.
+    /// Does not call `on_connection_change`.
+    pub async fn stop(self) {
         self.accept_task.abort();
         (self.stop_connections)();
+        // The listener lives in the accept task; it closes when the task ends.
+        if let Err(err) = self.accept_task.await {
+            if !err.is_cancelled() {
+                log::warn!("Phone server: accept task failed: {err}");
+            }
+        }
     }
 }
 
@@ -490,7 +499,7 @@ mod tests {
     impl Drop for Harness {
         fn drop(&mut self) {
             if let Some(server) = self.server.take() {
-                server.stop();
+                tokio::spawn(server.stop());
             }
         }
     }
@@ -627,6 +636,14 @@ mod tests {
             .await
             .unwrap();
         wait_until("toggle", || h.toggles.load(Ordering::SeqCst) == 1).await;
+    }
+
+    #[tokio::test]
+    async fn stop_frees_the_port() {
+        let mut h = start().await;
+        h.server.take().unwrap().stop().await;
+        let rebound = tokio::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, h.port)).await;
+        assert!(rebound.is_ok(), "port {} is still in use", h.port);
     }
 
     #[tokio::test]

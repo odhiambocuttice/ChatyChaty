@@ -498,6 +498,29 @@ async setSelectedChannel(channel: number | null) : Promise<Result<null, string>>
 }
 },
 /**
+ * Starts or stops the phone server to match the selected microphone, then
+ * returns what the settings page shows.
+ */
+async getPhoneMicrophoneStatus() : Promise<Result<PhoneStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_phone_microphone_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Makes a new pairing code. The connected phone must scan the new QR code.
+ */
+async newPhoneMicrophoneCode() : Promise<Result<PhoneStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("new_phone_microphone_code") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Checks if the Mac is a laptop by detecting battery presence
  * 
  * This uses pmset to check for battery information.
@@ -570,7 +593,16 @@ vad_backend?: VadBackend;
  * Which recording overlay to show: None / Minimal / Live. Migrated from the
  * old `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle; typing_speed?: TypingSpeed; speech_model?: SpeechModel }
+overlay_style?: OverlayStyle; typing_speed?: TypingSpeed; speech_model?: SpeechModel; 
+/**
+ * Pairing token for the phone microphone. Made the first time the phone
+ * microphone is selected.
+ */
+phone_microphone_token?: string | null; 
+/**
+ * The port the phone microphone server last listened on.
+ */
+phone_microphone_port?: number | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type CustomSounds = { start: boolean; stop: boolean }
@@ -611,6 +643,18 @@ export type OverlayPosition = "top" | "bottom"
  */
 export type OverlayStyle = "none" | "minimal" | "live"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
+/**
+ * What the settings page shows about the phone microphone.
+ */
+export type PhoneStatus = { running: boolean; 
+/**
+ * The address the phone opens: `https://<ip>:<port>/?t=<token>`.
+ */
+url: string | null; 
+/**
+ * A QR code of `url`, as SVG markup.
+ */
+qr_svg: string | null; connected: boolean; error: string | null }
 /**
  * Whether a provider has a key, for the Settings page. The key itself never
  * leaves the backend.
