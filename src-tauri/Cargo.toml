@@ -68,6 +68,9 @@ tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downloads", features = [
   "tokio",
 ] }
+rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+rand = "0.9"
+rustls-pki-types = "1"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
