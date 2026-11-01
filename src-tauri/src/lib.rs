@@ -307,14 +307,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         }
     });
 
-    // Start the phone server if the phone is the saved microphone.
+    // Start the phone server if the phone is the saved microphone, then keep
+    // checking it: retry a failed start, restart it when the LAN address changes.
     let phone_app_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         let phone = phone_app_handle
             .state::<Arc<phone::PhoneMicrophone>>()
             .inner()
             .clone();
-        phone.sync(&phone_app_handle).await;
+        phone.keep_in_sync(&phone_app_handle).await;
     });
 }
 

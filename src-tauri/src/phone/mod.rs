@@ -16,7 +16,9 @@ use protocol::PhoneState;
 use serde::Serialize;
 use server::{start_server, RunningServer, ServerConfig};
 use specta::Type;
+use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
 
@@ -29,6 +31,9 @@ const DEFAULT_PORT: u16 = 47615;
 /// Sent to the frontend when the server starts or stops, or the phone connects
 /// or disconnects. The payload is empty; read `get_phone_microphone_status`.
 const CHANGED_EVENT: &str = "phone-microphone-changed";
+
+/// How often `keep_in_sync` checks the server while the phone is selected.
+const RECHECK_INTERVAL: Duration = Duration::from_secs(20);
 
 const NO_NETWORK_ERROR: &str =
     "No Wi-Fi network found. Connect this computer to Wi-Fi and try again.";
@@ -53,12 +58,18 @@ struct Shown {
     error: Option<String>,
 }
 
+/// A running server and the LAN address its certificate and URL are for.
+struct Active {
+    server: RunningServer,
+    ip: Ipv4Addr,
+}
+
 pub struct PhoneMicrophone {
     capture: PhoneCapture<CaptureSink>,
     state: watch::Sender<PhoneState>,
     /// The running server. The async lock also keeps `sync` and `new_code`
     /// from running at the same time.
-    server: tokio::sync::Mutex<Option<RunningServer>>,
+    server: tokio::sync::Mutex<Option<Active>>,
     shown: Mutex<Shown>,
     /// The status at the last `phone-microphone-changed` event that `sync` or
     /// `new_code` sent.
@@ -98,23 +109,51 @@ impl PhoneMicrophone {
     }
 
     /// Starts the server when the phone is the selected microphone and stops it
-    /// otherwise. Errors go to `status().error`.
+    /// otherwise. Restarts it when the LAN address changed. Errors go to
+    /// `status().error`.
     pub async fn sync(&self, app: &AppHandle) {
         let mut server = self.server.lock().await;
-        let selected = get_settings(app).selected_microphone.as_deref() == Some(PHONE_MICROPHONE);
-        match (selected, server.is_some()) {
-            (true, false) => *server = self.start(app).await,
-            (false, true) => {
-                if let Some(running) = server.take() {
-                    running.stop().await;
+        match (phone_selected(app), server.as_ref().map(|active| active.ip)) {
+            (true, None) => *server = self.start(app).await,
+            (true, Some(ip)) => {
+                if needs_restart(ip, identity::local_ipv4()) {
+                    log::info!("Phone microphone: the network address changed; restarting");
+                    self.restart(&mut server, app).await;
+                }
+            }
+            (false, Some(_)) => {
+                if let Some(active) = server.take() {
+                    active.server.stop().await;
                 }
                 *self.lock_shown() = Shown::default();
             }
             // Clear the error of an earlier failed start.
-            (false, false) => self.lock_shown().error = None,
-            (true, true) => {}
+            (false, None) => self.lock_shown().error = None,
         }
         self.emit_if_changed(app);
+    }
+
+    /// Calls `sync` now and then every `RECHECK_INTERVAL` while the phone is
+    /// the selected microphone, so a failed start is retried and a new LAN
+    /// address gets a new server while the settings page is closed. Never
+    /// returns.
+    pub async fn keep_in_sync(&self, app: &AppHandle) {
+        self.sync(app).await;
+        loop {
+            tokio::time::sleep(RECHECK_INTERVAL).await;
+            if phone_selected(app) {
+                self.sync(app).await;
+            }
+        }
+    }
+
+    /// Stops the running server, if any, and starts a new one.
+    async fn restart(&self, server: &mut Option<Active>, app: &AppHandle) {
+        if let Some(active) = server.take() {
+            active.server.stop().await;
+        }
+        *self.lock_shown() = Shown::default();
+        *server = self.start(app).await;
     }
 
     /// Makes a new pairing token. The connected phone is dropped and must scan
@@ -125,10 +164,8 @@ impl PhoneMicrophone {
         settings.phone_microphone_token = Some(identity::new_token());
         write_settings(app, settings);
 
-        if let Some(running) = server.take() {
-            running.stop().await;
-            *self.lock_shown() = Shown::default();
-            *server = self.start(app).await;
+        if server.is_some() {
+            self.restart(&mut server, app).await;
         }
         self.emit_if_changed(app);
     }
@@ -147,9 +184,9 @@ impl PhoneMicrophone {
 
     /// Starts the server and fills in what the settings page shows. Returns
     /// `None` and records the error if it cannot start.
-    async fn start(&self, app: &AppHandle) -> Option<RunningServer> {
+    async fn start(&self, app: &AppHandle) -> Option<Active> {
         match self.try_start(app).await {
-            Ok((running, url)) => {
+            Ok((active, url)) => {
                 let qr_svg = qr_svg(&url);
                 if qr_svg.is_none() {
                     log::warn!("Phone microphone: could not make the QR code");
@@ -159,7 +196,7 @@ impl PhoneMicrophone {
                     qr_svg,
                     error: None,
                 };
-                Some(running)
+                Some(active)
             }
             Err(error) => {
                 log::error!("Phone microphone: the server did not start: {error}");
@@ -172,7 +209,7 @@ impl PhoneMicrophone {
         }
     }
 
-    async fn try_start(&self, app: &AppHandle) -> Result<(RunningServer, String), String> {
+    async fn try_start(&self, app: &AppHandle) -> Result<(Active, String), String> {
         let ip = identity::local_ipv4().ok_or_else(|| NO_NETWORK_ERROR.to_string())?;
 
         let mut settings = get_settings(app);
@@ -222,7 +259,13 @@ impl PhoneMicrophone {
         }
 
         let url = format!("https://{ip}:{}/?t={token}", running.port);
-        Ok((running, url))
+        Ok((
+            Active {
+                server: running,
+                ip,
+            },
+            url,
+        ))
     }
 }
 
@@ -232,6 +275,10 @@ pub fn notify_state(app: &AppHandle, state: PhoneState) {
     if let Some(phone) = app.try_state::<Arc<PhoneMicrophone>>() {
         phone.state.send_replace(state);
     }
+}
+
+fn phone_selected(app: &AppHandle) -> bool {
+    get_settings(app).selected_microphone.as_deref() == Some(PHONE_MICROPHONE)
 }
 
 fn emit_changed(app: &AppHandle) {
@@ -248,6 +295,12 @@ fn store_if_changed(last: &mut Option<PhoneStatus>, current: PhoneStatus) -> boo
     }
     *last = Some(current);
     true
+}
+
+/// True when the running server no longer matches the computer's LAN address
+/// `current_ip` (`None`: no network). Its certificate and URL are then wrong.
+fn needs_restart(running_ip: Ipv4Addr, current_ip: Option<Ipv4Addr>) -> bool {
+    current_ip != Some(running_ip)
 }
 
 /// A QR code for `url`, as SVG markup.
@@ -297,6 +350,15 @@ mod tests {
             ..running
         };
         assert!(store_if_changed(&mut last, connected));
+    }
+
+    #[test]
+    fn restart_needed_only_when_the_address_changed() {
+        let ip = Ipv4Addr::new(192, 168, 1, 20);
+        assert!(!needs_restart(ip, Some(ip)));
+        assert!(needs_restart(ip, Some(Ipv4Addr::new(192, 168, 1, 21))));
+        // No network: restart, so the panel shows the "No Wi-Fi" error.
+        assert!(needs_restart(ip, None));
     }
 
     #[test]
