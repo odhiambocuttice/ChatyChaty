@@ -34,7 +34,7 @@ const NO_NETWORK_ERROR: &str =
     "No Wi-Fi network found. Connect this computer to Wi-Fi and try again.";
 
 /// What the settings page shows about the phone microphone.
-#[derive(Serialize, Type, Debug, Clone)]
+#[derive(Serialize, Type, Debug, Clone, PartialEq, Eq)]
 pub struct PhoneStatus {
     pub running: bool,
     /// The address the phone opens: `https://<ip>:<port>/?t=<token>`.
@@ -60,6 +60,9 @@ pub struct PhoneMicrophone {
     /// from running at the same time.
     server: tokio::sync::Mutex<Option<RunningServer>>,
     shown: Mutex<Shown>,
+    /// The status at the last `phone-microphone-changed` event that `sync` or
+    /// `new_code` sent.
+    last_emitted: Mutex<Option<PhoneStatus>>,
 }
 
 impl PhoneMicrophone {
@@ -70,6 +73,7 @@ impl PhoneMicrophone {
             state: watch::channel(PhoneState::Idle).0,
             server: tokio::sync::Mutex::new(None),
             shown: Mutex::new(Shown::default()),
+            last_emitted: Mutex::new(None),
         }
     }
 
@@ -107,17 +111,11 @@ impl PhoneMicrophone {
                 }
                 *self.lock_shown() = Shown::default();
             }
-            (false, false) => {
-                // Clear the error of an earlier failed start.
-                let mut shown = self.lock_shown();
-                if shown.error.is_none() {
-                    return;
-                }
-                shown.error = None;
-            }
-            (true, true) => return,
+            // Clear the error of an earlier failed start.
+            (false, false) => self.lock_shown().error = None,
+            (true, true) => {}
         }
-        emit_changed(app);
+        self.emit_if_changed(app);
     }
 
     /// Makes a new pairing token. The connected phone is dropped and must scan
@@ -133,7 +131,19 @@ impl PhoneMicrophone {
             *self.lock_shown() = Shown::default();
             *server = self.start(app).await;
         }
-        emit_changed(app);
+        self.emit_if_changed(app);
+    }
+
+    /// Sends `phone-microphone-changed` only when the status differs from the
+    /// last one sent. The settings page reloads the status on this event, and
+    /// reloading calls `sync`; an event for an unchanged status (for example a
+    /// start that fails again) would repeat forever.
+    fn emit_if_changed(&self, app: &AppHandle) {
+        let status = self.status();
+        let mut last = self.last_emitted.lock().unwrap_or_else(|e| e.into_inner());
+        if store_if_changed(&mut last, status) {
+            emit_changed(app);
+        }
     }
 
     /// Starts the server and fills in what the settings page shows. Returns
@@ -231,6 +241,16 @@ fn emit_changed(app: &AppHandle) {
     }
 }
 
+/// Stores `current` in `last` and returns `true` when it differs from what
+/// `last` held.
+fn store_if_changed(last: &mut Option<PhoneStatus>, current: PhoneStatus) -> bool {
+    if last.as_ref() == Some(&current) {
+        return false;
+    }
+    *last = Some(current);
+    true
+}
+
 /// A QR code for `url`, as SVG markup.
 fn qr_svg(url: &str) -> Option<String> {
     let code = qrcode::QrCode::new(url.as_bytes()).ok()?;
@@ -244,6 +264,41 @@ fn qr_svg(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn failed_start() -> PhoneStatus {
+        PhoneStatus {
+            running: false,
+            url: None,
+            qr_svg: None,
+            connected: false,
+            error: Some(NO_NETWORK_ERROR.to_string()),
+        }
+    }
+
+    #[test]
+    fn emits_only_when_status_changes() {
+        let mut last = None;
+        // The first status is always news.
+        assert!(store_if_changed(&mut last, failed_start()));
+        // The same failed start again: no event, so no reload loop.
+        assert!(!store_if_changed(&mut last, failed_start()));
+
+        let running = PhoneStatus {
+            running: true,
+            url: Some("https://192.168.1.20:47615/?t=abc".to_string()),
+            qr_svg: Some("<svg></svg>".to_string()),
+            connected: false,
+            error: None,
+        };
+        assert!(store_if_changed(&mut last, running.clone()));
+        assert!(!store_if_changed(&mut last, running.clone()));
+
+        let connected = PhoneStatus {
+            connected: true,
+            ..running
+        };
+        assert!(store_if_changed(&mut last, connected));
+    }
 
     #[test]
     fn qr_svg_is_svg() {
