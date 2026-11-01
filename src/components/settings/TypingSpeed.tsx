@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Dropdown } from "../ui/Dropdown";
+import { SegmentedControl } from "../ui/SegmentedControl";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import type { TypingSpeed as TypingSpeedValue } from "@/bindings";
@@ -37,10 +37,11 @@ export const TypingSpeed: React.FC<TypingSpeedProps> = React.memo(
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
-        <Dropdown
+        <SegmentedControl
+          ariaLabel={t("settings.basics.typingSpeed.title")}
           options={options}
-          selectedValue={getSetting("typing_speed") || "normal"}
-          onSelect={(value) =>
+          value={getSetting("typing_speed") || "normal"}
+          onChange={(value) =>
             updateSetting("typing_speed", value as TypingSpeedValue)
           }
           disabled={isUpdating("typing_speed")}

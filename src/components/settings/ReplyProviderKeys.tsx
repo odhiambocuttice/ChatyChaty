@@ -56,7 +56,7 @@ const ProviderKeyRow: React.FC<ProviderKeyRowProps> = ({
                 : t("settings.replyKeys.placeholder")
             }
             disabled={busy}
-            className="px-2 py-[5px] text-sm bg-wash border border-line-strong rounded-md w-[200px] focus:outline-none focus:border-logo-primary disabled:opacity-50"
+            className="min-h-9 px-3 py-[5px] text-sm bg-background border border-line-strong rounded-control w-[200px] focus:outline-none focus:border-logo-primary disabled:opacity-50"
           />
           <Button
             variant="secondary"
