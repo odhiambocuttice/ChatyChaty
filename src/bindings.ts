@@ -276,6 +276,17 @@ async getDefaultSettings() : Promise<Result<AppSettings, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getReplyProviderKeys() : Promise<ProviderKey[]> {
+    return await TAURI_INVOKE("get_reply_provider_keys");
+},
+async setReplyProviderKey(provider: string, key: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_reply_provider_key", { provider, key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getLogDirPath() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_log_dir_path") };
@@ -555,7 +566,11 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
  * only while the status is `NotDetermined`; after that, only System Settings
  * can change it.
  */
-export type MacosMicrophoneStatus = "not_determined" | "restricted" | "denied" | "authorized" | "unsupported"
+export type MacosMicrophoneStatus = "not_determined" | "restricted" | "denied" | "authorized" | 
+/**
+ * Not macOS.
+ */
+"unsupported"
 /**
  * What the settings window shows about the one model.
  */
@@ -568,6 +583,11 @@ export type OverlayPosition = "top" | "bottom"
  */
 export type OverlayStyle = "none" | "minimal" | "live"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
+/**
+ * Whether a provider has a key, for the Settings page. The key itself never
+ * leaves the backend.
+ */
+export type ProviderKey = { name: string; saved: boolean }
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
  */

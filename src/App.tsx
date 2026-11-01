@@ -13,6 +13,7 @@ import {
   AutostartToggle,
   MicrophoneSelector,
   PauseMediaWhileRecording,
+  ReplyProviderKeys,
   ShortcutInput,
   ShowOverlay,
   StartHidden,
@@ -169,6 +170,9 @@ function App() {
             <SettingsGroup title={t("settings.shortcut.title")}>
               <ShortcutInput shortcutId="transcribe" grouped={true} />
               <ShortcutInput shortcutId="draft_reply" grouped={true} />
+            </SettingsGroup>
+            <SettingsGroup title={t("settings.replyKeys.title")}>
+              <ReplyProviderKeys />
             </SettingsGroup>
             <SettingsGroup title={t("settings.basics.title")}>
               <PauseMediaWhileRecording

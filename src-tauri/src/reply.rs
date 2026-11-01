@@ -9,7 +9,10 @@
 
 use base64::Engine;
 use log::{info, warn};
+use serde::Serialize;
 use serde_json::{json, Value};
+use specta::Type;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 use std::time::Duration;
 
@@ -19,7 +22,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The longest side of the screenshot sent to the model. A full Retina capture
 /// is several MB; this keeps chat text readable at a fraction of the size.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const SCREENSHOT_MAX_SIDE_PX: u32 = 1600;
 
 /// How many of the latest messages the model reads before it replies to the newest.
@@ -30,7 +33,8 @@ struct Provider {
     name: &'static str,
     url: &'static str,
     model: &'static str,
-    /// Keychain entry with the person's key. Add it with:
+    /// Name of the saved key: a macOS Keychain service, or a Windows Credential
+    /// Manager target. Settings saves it; on macOS it can also be added with
     /// `security add-generic-password -s <service> -a handy -w`
     keychain_service: &'static str,
     env_var: &'static str,
@@ -391,23 +395,183 @@ fn saved_key(provider: &Provider) -> Option<String> {
             return Some(key.trim().to_string());
         }
     }
-    #[cfg(target_os = "macos")]
-    {
+    key_store::read(provider.keychain_service)
+}
+
+/// Whether a provider has a key, for the Settings page. The key itself never
+/// leaves the backend.
+#[derive(Serialize, Debug, Clone, Type)]
+pub struct ProviderKey {
+    pub name: String,
+    pub saved: bool,
+}
+
+/// Every provider, in the order they are tried.
+pub fn provider_keys() -> Vec<ProviderKey> {
+    PROVIDERS
+        .iter()
+        .map(|p| ProviderKey {
+            name: p.name.to_string(),
+            saved: saved_key(p).is_some(),
+        })
+        .collect()
+}
+
+/// Saves the key for the named provider. An empty key removes the saved one.
+pub fn save_provider_key(name: &str, key: &str) -> Result<(), String> {
+    let provider = PROVIDERS
+        .iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| format!("Unknown provider: {name}"))?;
+    let key = key.trim();
+    if key.is_empty() {
+        key_store::delete(provider.keychain_service)?;
+        info!("Removed the {} key", provider.name);
+    } else {
+        key_store::write(provider.keychain_service, key)?;
+        info!("Saved the {} key", provider.name);
+    }
+    Ok(())
+}
+
+/// The macOS Keychain, through the `security` tool. Apple signs `security`, so
+/// reading a key never asks the person again after Chatelle is rebuilt.
+#[cfg(target_os = "macos")]
+mod key_store {
+    use std::process::Command;
+
+    pub fn read(service: &str) -> Option<String> {
         let output = Command::new("security")
-            .args([
-                "find-generic-password",
-                "-s",
-                provider.keychain_service,
-                "-w",
-            ])
+            .args(["find-generic-password", "-s", service, "-w"])
             .output()
             .ok()?;
         let key = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if output.status.success() && !key.is_empty() {
-            return Some(key);
+        (output.status.success() && !key.is_empty()).then_some(key)
+    }
+
+    pub fn write(service: &str, key: &str) -> Result<(), String> {
+        // -U replaces a key that is already saved.
+        let output = Command::new("security")
+            .args([
+                "add-generic-password",
+                "-U",
+                "-s",
+                service,
+                "-a",
+                "handy",
+                "-w",
+                key,
+            ])
+            .output()
+            .map_err(|e| format!("Could not run security: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Could not save the key: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn delete(service: &str) -> Result<(), String> {
+        let output = Command::new("security")
+            .args(["delete-generic-password", "-s", service])
+            .output()
+            .map_err(|e| format!("Could not run security: {e}"))?;
+        // 44: no key was saved, so there is nothing to remove.
+        if !output.status.success() && output.status.code() != Some(44) {
+            return Err(format!(
+                "Could not remove the key: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Windows Credential Manager. The key is stored as UTF-16, like
+/// `cmdkey /generic:<target> /user:handy /pass:<key>` stores it.
+#[cfg(target_os = "windows")]
+mod key_store {
+    use windows::core::{PCWSTR, PWSTR};
+    use windows::Win32::Foundation::ERROR_NOT_FOUND;
+    use windows::Win32::Security::Credentials::{
+        CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE,
+        CRED_TYPE_GENERIC,
+    };
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(Some(0)).collect()
+    }
+
+    pub fn read(target: &str) -> Option<String> {
+        let target = wide(target);
+        let mut credential: *mut CREDENTIALW = std::ptr::null_mut();
+        unsafe {
+            CredReadW(
+                PCWSTR(target.as_ptr()),
+                CRED_TYPE_GENERIC,
+                None,
+                &mut credential,
+            )
+            .ok()?;
+            let size = (*credential).CredentialBlobSize as usize;
+            let blob = (*credential).CredentialBlob;
+            let key = if blob.is_null() || size == 0 {
+                String::new()
+            } else {
+                let bytes = std::slice::from_raw_parts(blob, size);
+                let units: Vec<u16> = bytes
+                    .chunks_exact(2)
+                    .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                    .collect();
+                String::from_utf16_lossy(&units).trim().to_string()
+            };
+            CredFree(credential as *const _);
+            (!key.is_empty()).then_some(key)
         }
     }
-    None
+
+    pub fn write(target: &str, key: &str) -> Result<(), String> {
+        let mut target = wide(target);
+        let mut user = wide("handy");
+        let mut blob: Vec<u8> = key.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let credential = CREDENTIALW {
+            Type: CRED_TYPE_GENERIC,
+            TargetName: PWSTR(target.as_mut_ptr()),
+            UserName: PWSTR(user.as_mut_ptr()),
+            CredentialBlobSize: blob.len() as u32,
+            CredentialBlob: blob.as_mut_ptr(),
+            Persist: CRED_PERSIST_LOCAL_MACHINE,
+            ..Default::default()
+        };
+        unsafe { CredWriteW(&credential, 0) }.map_err(|e| format!("Could not save the key: {e}"))
+    }
+
+    pub fn delete(target: &str) -> Result<(), String> {
+        let target = wide(target);
+        match unsafe { CredDeleteW(PCWSTR(target.as_ptr()), CRED_TYPE_GENERIC, None) } {
+            Ok(()) => Ok(()),
+            // No key was saved, so there is nothing to remove.
+            Err(e) if e.code() == ERROR_NOT_FOUND.to_hresult() => Ok(()),
+            Err(e) => Err(format!("Could not remove the key: {e}")),
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+mod key_store {
+    pub fn read(_service: &str) -> Option<String> {
+        None
+    }
+
+    pub fn write(_service: &str, _key: &str) -> Result<(), String> {
+        Err("Saving keys is not available on this system. Set GROQ_API_KEY instead.".to_string())
+    }
+
+    pub fn delete(_service: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -445,9 +609,92 @@ fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
     result
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Copies the main display with GDI. Chatelle is DPI aware, so the screen size
+/// is in real pixels and the copy is not blurred.
+#[cfg(target_os = "windows")]
 fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
-    Err("Reply drafting reads the screen and is only available on macOS".to_string())
+    use windows::Win32::Graphics::Gdi::{
+        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
+        GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+        SRCCOPY,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+
+    let (width, height) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+    if width <= 0 || height <= 0 {
+        return Err("Could not find the size of the screen".to_string());
+    }
+
+    // 32-bit rows, top row first.
+    let mut bgra = vec![0u8; width as usize * height as usize * 4];
+    unsafe {
+        let screen = GetDC(None);
+        if screen.is_invalid() {
+            return Err("Could not open the screen to copy it".to_string());
+        }
+        let memory = CreateCompatibleDC(Some(screen));
+        let bitmap = CreateCompatibleBitmap(screen, width, height);
+        let previous = SelectObject(memory, bitmap.into());
+        let copied = BitBlt(memory, 0, 0, width, height, Some(screen), 0, 0, SRCCOPY);
+        // GetDIBits needs the bitmap out of the device context.
+        SelectObject(memory, previous);
+        let mut info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width,
+                biHeight: -height,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rows = GetDIBits(
+            memory,
+            bitmap,
+            0,
+            height as u32,
+            Some(bgra.as_mut_ptr().cast()),
+            &mut info,
+            DIB_RGB_COLORS,
+        );
+        let _ = DeleteObject(bitmap.into());
+        let _ = DeleteDC(memory);
+        ReleaseDC(None, screen);
+        copied.map_err(|e| format!("Could not copy the screen: {e}"))?;
+        if rows != height {
+            return Err("Could not read the copied screen".to_string());
+        }
+    }
+
+    let rgb: Vec<u8> = bgra
+        .chunks_exact(4)
+        .flat_map(|pixel| [pixel[2], pixel[1], pixel[0]])
+        .collect();
+    let screenshot = image::RgbImage::from_raw(width as u32, height as u32, rgb)
+        .ok_or("The copied screen has the wrong size")?;
+    let longest = width.max(height) as u32;
+    let screenshot = if longest > SCREENSHOT_MAX_SIDE_PX {
+        let scale = SCREENSHOT_MAX_SIDE_PX as f64 / longest as f64;
+        image::imageops::thumbnail(
+            &screenshot,
+            (width as f64 * scale).round() as u32,
+            (height as f64 * scale).round() as u32,
+        )
+    } else {
+        screenshot
+    };
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 80)
+        .encode_image(&screenshot)
+        .map_err(|e| format!("Could not encode the screenshot: {e}"))?;
+    Ok(jpeg)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
+    Err("Reply drafting reads the screen and is only available on macOS and Windows".to_string())
 }
 
 /// Reads the chat on screen and returns the reply to type.
@@ -463,8 +710,7 @@ pub fn draft_reply_from_screen() -> Result<String, String> {
         .collect();
     if attempts.iter().all(|a| a.key.is_none()) {
         return Err(
-            "No provider key saved. Save one with: security add-generic-password -s handy-groq-key -a handy -w"
-                .to_string(),
+            "No provider key saved. Add one in Settings under Draft reply keys.".to_string(),
         );
     }
     let jpeg = capture_screen_jpeg()?;
@@ -758,6 +1004,18 @@ mod tests {
         );
         limited.join().unwrap();
         assert!(ok.join().unwrap().to_lowercase().contains("bearer k2"));
+    }
+
+    #[test]
+    fn a_key_for_an_unknown_provider_is_never_saved() {
+        let error = save_provider_key("Nobody", "k1").unwrap_err();
+        assert!(error.contains("Unknown provider: Nobody"));
+    }
+
+    #[test]
+    fn settings_lists_every_provider_in_the_order_they_are_tried() {
+        let names: Vec<String> = provider_keys().into_iter().map(|p| p.name).collect();
+        assert_eq!(names, ["Gemini", "Groq", "OpenRouter"]);
     }
 
     #[test]

@@ -96,9 +96,13 @@ windows = { version = "0.61.3", features = [
   "Win32_System_Variant",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_Security_Credentials",
   "Win32_UI_WindowsAndMessaging",
 ] }
 winreg = "0.55"
+# Shrinks and encodes the screenshot for reply drafting (macOS uses sips).
+# Already in the tree through tauri; this adds only the JPEG codec.
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 # Whisper backend per Windows arch. x86_64 ships the Vulkan GPU backend and
 # keeps the dynamic-backends posture (loadable per-ISA CPU modules + Vulkan),

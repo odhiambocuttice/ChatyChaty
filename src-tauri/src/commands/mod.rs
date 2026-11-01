@@ -26,6 +26,18 @@ pub fn get_default_settings() -> Result<AppSettings, String> {
 
 #[tauri::command]
 #[specta::specta]
+pub fn get_reply_provider_keys() -> Vec<crate::reply::ProviderKey> {
+    crate::reply::provider_keys()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_reply_provider_key(provider: String, key: String) -> Result<(), String> {
+    crate::reply::save_provider_key(&provider, &key)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn get_log_dir_path(app: AppHandle) -> Result<String, String> {
     let log_dir = crate::portable::app_log_dir(&app)
         .map_err(|e| format!("Failed to get log directory: {}", e))?;
