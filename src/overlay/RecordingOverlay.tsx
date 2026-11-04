@@ -12,7 +12,7 @@ import i18n, { syncLanguageFromSettings } from "@/i18n";
 import type { ModelStateEvent } from "@/lib/types/events";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 
-type OverlayState = "recording" | "streaming" | "transcribing";
+type OverlayState = "recording" | "streaming" | "transcribing" | "drafting";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -222,6 +222,7 @@ const RecordingOverlay: React.FC = () => {
   const transcribingLabel = modelLoading
     ? t("overlay.loadingModel")
     : t("overlay.transcribing");
+  const draftingLabel = t("overlay.drafting");
 
   // ---- Shared building blocks (one visual language for every overlay form) ----
   const waveform = (
@@ -339,8 +340,8 @@ const RecordingOverlay: React.FC = () => {
   // ---- Minimal overlay: exactly one row at a time — waveform (recording), or a
   // spinner + label (transcribing). Never both. The pill animates its
   // width between them; the cancel button is in both rows so it stays put.
-  const working = state === "transcribing";
-  const workLabel = transcribingLabel;
+  const working = state === "transcribing" || state === "drafting";
+  const workLabel = state === "drafting" ? draftingLabel : transcribingLabel;
 
   return (
     <div

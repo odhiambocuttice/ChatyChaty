@@ -116,6 +116,9 @@ pub fn cancel_current_operation(app: &AppHandle) {
     tm.cancel_stream();
     tm.cancel_transcription();
 
+    // Cancel any ongoing draft reply
+    crate::actions::cancel_drafting();
+
     // Update tray icon and hide overlay
     set_tray_state(app, crate::tray::TrayIconState::Idle);
     hide_recording_overlay(app);

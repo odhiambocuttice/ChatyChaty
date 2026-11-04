@@ -146,13 +146,15 @@
     "recordingFailed": "Failed to start recording: {{error}}",
     "modelLoadFailed": "Failed to load the speech model",
     "transcriptionFailedTitle": "Transcription Failed",
+    "draftReplyFailedTitle": "Draft Reply Failed",
     "typeFailedTitle": "Failed to Type Text",
     "typeFailed": "Text could not be typed into the active application.",
     "modelDownloadFailed": "Failed to download the speech model"
   },
   "overlay": {
     "transcribing": "Transcribing...",
-    "loadingModel": "Loading model..."
+    "loadingModel": "Loading model...",
+    "drafting": "Drafting reply..."
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",

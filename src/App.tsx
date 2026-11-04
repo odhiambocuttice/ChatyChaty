@@ -136,6 +136,18 @@ function App() {
     };
   }, [t]);
 
+  // Listen for draft reply failures and show a toast
+  useEffect(() => {
+    const unlisten = listen<string>("draft-reply-error", (event) => {
+      toast.error(t("errors.draftReplyFailedTitle"), {
+        description: event.payload,
+      });
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
+
   // Listen for model loading and download failures and show a toast
   useEffect(() => {
     const unlisteners = [

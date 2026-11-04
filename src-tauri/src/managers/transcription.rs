@@ -638,9 +638,21 @@ fn engine_error(e: EngineError) -> anyhow::Error {
     }
 }
 
-/// Trim the text and collapse runs of spaces.
+/// Trim the text, strip non-Latin/CJK hallucination characters, and collapse runs of spaces.
 fn normalize_transcription_output(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    let filtered: String = text
+        .chars()
+        .filter(|&c| {
+            c.is_ascii()
+                || matches!(
+                    c as u32,
+                    0x00A0..=0x024F // Latin-1 Supplement & Latin Extended-A/B
+                    | 0x2010..=0x2027 // Common punctuation (dashes, quotes, ellipsis)
+                    | 0x2030..=0x205E
+                )
+        })
+        .collect();
+    filtered.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn emit_stream_text(app_handle: &AppHandle, committed: &str, tentative: &str) {
@@ -797,6 +809,18 @@ mod tests {
             "hello world"
         );
         assert_eq!(normalize_transcription_output(""), "");
+    }
+
+    #[test]
+    fn output_strips_non_latin_and_cjk_hallucinations() {
+        assert_eq!(
+            normalize_transcription_output("That is going to石膏 be be"),
+            "That is going to be be"
+        );
+        assert_eq!(
+            normalize_transcription_output("café au lait"),
+            "café au lait"
+        );
     }
 
     #[test]

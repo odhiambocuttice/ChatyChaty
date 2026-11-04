@@ -483,6 +483,13 @@ struct DraftReplyAction;
 
 /// True while a reply is being drafted, so a second press does not start a second request.
 static DRAFTING: AtomicBool = AtomicBool::new(false);
+static DRAFT_CANCEL_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Cancels an in-flight draft reply operation.
+pub fn cancel_drafting() {
+    DRAFT_CANCEL_GENERATION.fetch_add(1, Ordering::SeqCst);
+    DRAFTING.store(false, Ordering::SeqCst);
+}
 
 impl ShortcutAction for DraftReplyAction {
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
@@ -490,17 +497,55 @@ impl ShortcutAction for DraftReplyAction {
             debug!("A reply is already being drafted");
             return;
         }
-        let app = app.clone();
+        let generation = DRAFT_CANCEL_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+        let app_clone = app.clone();
+
+        // Immediate visual and audio cues: set tray to working, display drafting overlay pill, and play chime
+        set_tray_state(app, TrayIconState::Transcribing);
+        utils::show_drafting_overlay(app);
+        play_feedback_sound(app, SoundType::Start);
+        shortcut::register_cancel_shortcut(app);
+
         // Reading the screen and calling the model take seconds, and typing sleeps
         // between keys: none of it may run on the shortcut's thread.
         std::thread::spawn(move || {
-            match crate::reply::draft_reply_from_screen() {
+            let result = crate::reply::draft_reply_from_screen();
+            shortcut::unregister_cancel_shortcut(&app_clone);
+
+            if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) != generation {
+                debug!("Draft reply operation cancelled during drafting");
+                utils::hide_recording_overlay(&app_clone);
+                set_tray_state(&app_clone, TrayIconState::Idle);
+                DRAFTING.store(false, Ordering::SeqCst);
+                return;
+            }
+
+            match result {
                 Ok(reply) => {
-                    if let Err(e) = crate::clipboard::paste(reply, app) {
+                    play_feedback_sound(&app_clone, SoundType::Stop);
+                    if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) != generation {
+                        debug!("Draft reply operation cancelled before typing");
+                        utils::hide_recording_overlay(&app_clone);
+                        set_tray_state(&app_clone, TrayIconState::Idle);
+                        DRAFTING.store(false, Ordering::SeqCst);
+                        return;
+                    }
+
+                    if let Err(e) = crate::clipboard::paste(reply, app_clone.clone()) {
                         error!("Failed to type the drafted reply: {e}");
+                        let _ = app_clone.emit("draft-reply-error", e.to_string());
+                    }
+                    if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
+                        utils::hide_recording_overlay(&app_clone);
+                        set_tray_state(&app_clone, TrayIconState::Idle);
                     }
                 }
-                Err(e) => error!("Failed to draft a reply: {e}"),
+                Err(e) => {
+                    error!("Failed to draft a reply: {e}");
+                    utils::hide_recording_overlay(&app_clone);
+                    set_tray_state(&app_clone, TrayIconState::Idle);
+                    let _ = app_clone.emit("draft-reply-error", e);
+                }
             }
             DRAFTING.store(false, Ordering::SeqCst);
         });
@@ -538,5 +583,20 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::Live, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, true));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
+    }
+
+    #[test]
+    fn cancel_drafting_increments_generation_and_clears_drafting_flag() {
+        use super::{cancel_drafting, DRAFTING, DRAFT_CANCEL_GENERATION};
+        use std::sync::atomic::Ordering;
+
+        DRAFTING.store(true, Ordering::SeqCst);
+        let gen_before = DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst);
+        cancel_drafting();
+        assert_eq!(DRAFTING.load(Ordering::SeqCst), false);
+        assert_eq!(
+            DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst),
+            gen_before + 1
+        );
     }
 }
