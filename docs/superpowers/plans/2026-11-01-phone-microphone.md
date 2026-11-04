@@ -38,11 +38,13 @@
 ### Task 1: `PhoneCapture` — cut streamed audio into chunks for a sink
 
 **Files:**
+
 - Create: `src-tauri/src/phone/mod.rs` (module root; for now only `pub mod capture;`)
 - Create: `src-tauri/src/phone/capture.rs`
 - Modify: `src-tauri/src/lib.rs` (add `mod phone;`)
 
 **Interfaces:**
+
 - Produces:
   - `pub const PHONE_SAMPLE_RATE: u32 = 16_000;`
   - `pub enum PhoneStartError { NotConnected, AlreadyRecording }` (derive `Debug`, `thiserror`-free `Display`: "Phone not connected — scan the QR code in Settings" / "Already recording")
@@ -101,12 +103,14 @@
 ### Task 2: Protocol and phone page
 
 **Files:**
+
 - Create: `src-tauri/src/phone/protocol.rs`
 - Create: `src-tauri/src/phone/page.html`
 - Modify: `src-tauri/src/phone/mod.rs` (`pub mod protocol;`)
 - Modify: `src/i18n/locales/en/translation.json` (add `phonePage` block, below)
 
 **Interfaces:**
+
 - Produces:
   - `pub enum PhoneState { Idle, Recording, Transcribing }` — `Serialize` as lowercase strings.
   - `pub enum ClientMessage { Toggle }` — from `{"type":"toggle"}`; `pub fn parse_client_message(text: &str) -> Option<ClientMessage>`.
@@ -141,11 +145,13 @@
 ### Task 3: Address, certificate and token
 
 **Files:**
+
 - Create: `src-tauri/src/phone/identity.rs`
 - Modify: `src-tauri/Cargo.toml` — add `rcgen = "0.13"` (default features use `ring`, already in the lockfile), `rand = "0.9"` (already in the lockfile).
 - Modify: `src-tauri/src/phone/mod.rs` (`pub mod identity;`)
 
 **Interfaces:**
+
 - Produces:
   - `pub fn local_ipv4() -> Option<Ipv4Addr>` — bind a `std::net::UdpSocket` to `0.0.0.0:0`, `connect("192.168.0.1:9")` (no packet is sent), read `local_addr()`; return it only if `is_private()`. Wrap the choice in `pub fn pick_private(candidate: Option<Ipv4Addr>) -> Option<Ipv4Addr>` for testing.
   - `pub struct TlsIdentity { pub cert_chain: Vec<rustls::pki_types::CertificateDer<'static>>, pub key: rustls::pki_types::PrivateKeyDer<'static> }`
@@ -162,11 +168,13 @@
 ### Task 4: The HTTPS + WebSocket server
 
 **Files:**
+
 - Create: `src-tauri/src/phone/server.rs`
 - Modify: `src-tauri/Cargo.toml` — main `tokio` gets `features = ["net", "io-util", "sync", "time", "macros"]`; add `tokio-tungstenite = "0.26"` (no TLS features; we wrap the stream ourselves); `tokio-rustls = "0.26"` direct dependency.
 - Modify: `src-tauri/src/phone/mod.rs` (`pub mod server;`)
 
 **Interfaces:**
+
 - Consumes: `PhoneCapture<S>` (Task 1), `protocol::*` (Task 2), `TlsIdentity` (Task 3).
 - Produces:
   - `pub struct ServerConfig<S: Sink> { pub port: u16, pub token: String, pub identity: TlsIdentity, pub capture: PhoneCapture<S>, pub on_toggle: Arc<dyn Fn() + Send + Sync>, pub state: tokio::sync::watch::Receiver<PhoneState>, pub on_connection_change: Arc<dyn Fn(bool) + Send + Sync> }`
@@ -174,11 +182,12 @@
   - `pub async fn start_server<S: Sink>(config: ServerConfig<S>) -> anyhow::Result<RunningServer>` — binds `0.0.0.0:port`; if busy and `port != 0`, retries once with port `0`; returns the real port.
 
 Behaviour:
+
 - Accept TLS, read the request head up to `\r\n\r\n` (max 8 KiB), `parse_request_head`, check `token_matches`; on failure write `HTTP/1.1 403 Forbidden` and close.
 - `/` → `200` `text/html; charset=utf-8`, `Cache-Control: no-store`, body `render_page(token)`.
 - `/ws` → write `101 Switching Protocols` with `Sec-WebSocket-Accept: tungstenite::handshake::derive_accept_key(key)`, then `WebSocketStream::from_raw_socket(stream, Role::Server, None)`.
 - One phone at a time: a new `/ws` connection closes the previous one (keep a connection id; the older task exits when its id is stale).
-- On connect: `capture.set_connected(true)`, `on_connection_change(true)`, send the current `state_message`. On each `state` change: send it. Binary → `capture.push_samples(&decode_pcm16le(..))`. Text `Toggle` → `on_toggle()`. Send a ping every 5 s; if nothing arrives for 15 s, close. On close of the *current* connection: `set_connected(false)`, `on_connection_change(false)`.
+- On connect: `capture.set_connected(true)`, `on_connection_change(true)`, send the current `state_message`. On each `state` change: send it. Binary → `capture.push_samples(&decode_pcm16le(..))`. Text `Toggle` → `on_toggle()`. Send a ping every 5 s; if nothing arrives for 15 s, close. On close of the _current_ connection: `set_connected(false)`, `on_connection_change(false)`.
 
 - [ ] **Step 1: Write failing tests** (`#[tokio::test]`, rustls client with a test-only verifier that accepts any certificate, identity from `load_or_create_identity(tempdir, 127.0.0.1)`, `port: 0`):
   - `bad_token_gets_403` — `GET /?t=wrong` → status line starts with `HTTP/1.1 403`.
@@ -195,6 +204,7 @@ Behaviour:
 ### Task 5: `PhoneMicrophone` state, settings, commands, state hook
 
 **Files:**
+
 - Modify: `src-tauri/src/phone/mod.rs`
 - Modify: `src-tauri/src/settings.rs` — add `#[serde(default)] pub phone_microphone_token: Option<String>` and `#[serde(default)] pub phone_microphone_port: Option<u16>` (defaults `None`).
 - Modify: `src-tauri/src/commands/audio.rs` — `get_available_microphones` appends `AudioDevice { index: "phone-wifi", name: "phone-wifi", is_default: false }` after the system devices; `set_selected_microphone` calls `phone.sync(&app)` after saving.
@@ -203,6 +213,7 @@ Behaviour:
 - Modify: `src-tauri/src/overlay.rs` — first line of `show_recording_overlay` and `show_streaming_overlay`: `phone::notify_state(app_handle, PhoneState::Recording)`; `show_transcribing_overlay`: `Transcribing`; `hide_recording_overlay`: `Idle`. Place them before any early return.
 
 **Interfaces:**
+
 - Produces (in `phone/mod.rs`):
   - `pub const PHONE_MICROPHONE: &str = "phone-wifi";`
   - `pub struct PhoneMicrophone` with `pub fn new() -> Self` (holds one shared `PhoneCapture<CaptureSink>`, created with chunk size 512; Task 6 sets the real size)
@@ -223,9 +234,11 @@ Behaviour:
 ### Task 6: Record from the phone in `AudioRecordingManager`
 
 **Files:**
+
 - Modify: `src-tauri/src/managers/audio.rs`
 
 **Interfaces:**
+
 - Consumes: `PhoneMicrophone::capture()`, `PHONE_MICROPHONE`, `PhoneStartError` (Tasks 1, 5).
 - Changes:
   - `enum MicSource { Device(Recorder<CaptureSink>), Phone(PhoneCapture<CaptureSink>) }`; `OpenMicrophone { source: MicSource, failed: Arc<AtomicBool> }`.
@@ -247,11 +260,13 @@ Behaviour:
 ### Task 7: Settings UI
 
 **Files:**
+
 - Modify: `src/components/settings/MicrophoneSelector.tsx`
 - Create: `src/components/settings/PhoneMicrophonePanel.tsx`
 - Modify: `src/i18n/locales/en/translation.json`
 
 **Interfaces:**
+
 - Consumes: `commands.getPhoneMicrophoneStatus()`, `commands.newPhoneMicrophoneCode()`, event `phone-microphone-changed`, type `PhoneStatus` (Task 5 bindings).
 
 - [ ] **Step 1:** In `MicrophoneDropdown`, label the option whose `value === "phone-wifi"` with `t("settings.sound.microphone.phone")`; show that label when it is selected.
