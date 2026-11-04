@@ -12,6 +12,7 @@ mod managers;
 mod media;
 mod memory;
 mod overlay;
+mod phone;
 pub mod portable;
 mod reply;
 mod secure_input;
@@ -180,6 +181,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         TranscriptionManager::new(app_handle, model_manager.clone())
             .expect("Failed to initialize transcription manager"),
     );
+    // Managed before the recorder, which records from the phone when it is selected.
+    app_handle.manage(Arc::new(phone::PhoneMicrophone::new()));
     let recording_manager = Arc::new(
         AudioRecordingManager::new(app_handle, transcription_manager.stream_router())
             .expect("Failed to initialize recording manager"),
@@ -302,6 +305,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         if let Err(e) = commands::models::ensure_model_ready(&model_app_handle).await {
             log::error!("Could not get the model ready: {e}");
         }
+    });
+
+    // Start the phone server if the phone is the saved microphone, then keep
+    // checking it: retry a failed start, restart it when the LAN address changes.
+    let phone_app_handle = app_handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let phone = phone_app_handle
+            .state::<Arc<phone::PhoneMicrophone>>()
+            .inner()
+            .clone();
+        phone.keep_in_sync(&phone_app_handle).await;
     });
 }
 
@@ -477,6 +491,8 @@ pub fn run(cli_args: CliArgs) {
             commands::audio::is_recording,
             commands::audio::get_microphone_channels,
             commands::audio::set_selected_channel,
+            commands::phone::get_phone_microphone_status,
+            commands::phone::new_phone_microphone_code,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

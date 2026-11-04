@@ -3,6 +3,7 @@ use crate::audio_toolkit::VadPolicy;
 use crate::managers::audio::{recording_error_type, AudioRecordingManager};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
+use crate::phone::{self, protocol::PhoneState};
 use crate::settings::{get_settings, OverlayStyle};
 use crate::shortcut;
 use crate::tray::{set_tray_state, TrayIconState};
@@ -161,7 +162,8 @@ impl ShortcutAction for TranscribeAction {
         match settings.overlay_style {
             OverlayStyle::Live if model_streams => utils::show_streaming_overlay(app),
             OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
-            OverlayStyle::None => {} // show_overlay_state no-ops on None anyway
+            // No overlay, but the phone page still shows that it is recording.
+            OverlayStyle::None => phone::notify_state(app, PhoneState::Recording),
         }
         // Everything above runs before capture can begin, so each span here is
         // added keypress->capture latency.
@@ -276,6 +278,8 @@ impl ShortcutAction for TranscribeAction {
         // targets the same overlay that was shown for this transcription.
         let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
         if use_streaming_overlay {
+            // The live overlay stays up, so tell the phone page directly.
+            phone::notify_state(app, PhoneState::Transcribing);
             tm.emit_stream_working();
         } else {
             show_transcribing_overlay(app);

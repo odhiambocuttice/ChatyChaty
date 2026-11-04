@@ -296,6 +296,13 @@ pub struct AppSettings {
     pub typing_speed: TypingSpeed,
     #[serde(default)]
     pub speech_model: SpeechModel,
+    /// Pairing token for the phone microphone. Made the first time the phone
+    /// microphone is selected.
+    #[serde(default)]
+    pub phone_microphone_token: Option<String>,
+    /// The port the phone microphone server last listened on.
+    #[serde(default)]
+    pub phone_microphone_port: Option<u16>,
 }
 
 fn default_hold_threshold_ms() -> u64 {
@@ -440,6 +447,8 @@ pub fn get_default_settings() -> AppSettings {
         overlay_style: default_overlay_style(),
         typing_speed: TypingSpeed::default(),
         speech_model: SpeechModel::default(),
+        phone_microphone_token: None,
+        phone_microphone_port: None,
     }
 }
 
@@ -454,7 +463,17 @@ impl Default for AppSettings {
 /// one-time debug dump of the loaded settings.
 pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     let settings = get_settings(app);
-    debug!("Loaded settings: {:?}", settings);
+    debug!("Loaded settings: {:?}", settings_for_log(&settings));
+    settings
+}
+
+/// A copy of `settings` that is safe to write to the log: the phone
+/// microphone token would let anyone on the network use the microphone.
+fn settings_for_log(settings: &AppSettings) -> AppSettings {
+    let mut settings = settings.clone();
+    if settings.phone_microphone_token.is_some() {
+        settings.phone_microphone_token = Some("<redacted>".to_string());
+    }
     settings
 }
 
@@ -793,6 +812,30 @@ mod tests {
         stored.as_object_mut().unwrap().remove("speech_model");
         let settings: AppSettings = serde_json::from_value(stored).unwrap();
         assert_eq!(settings.speech_model, SpeechModel::Parakeet);
+    }
+
+    #[test]
+    fn phone_microphone_fields_default_to_none() {
+        let mut stored = default_settings_json();
+        let object = stored.as_object_mut().unwrap();
+        object.remove("phone_microphone_token");
+        object.remove("phone_microphone_port");
+        let settings: AppSettings = serde_json::from_value(stored).unwrap();
+        assert_eq!(settings.phone_microphone_token, None);
+        assert_eq!(settings.phone_microphone_port, None);
+    }
+
+    #[test]
+    fn logged_settings_hide_the_phone_token() {
+        let settings = AppSettings {
+            phone_microphone_token: Some("0123456789abcdef0123456789abcdef".to_string()),
+            ..get_default_settings()
+        };
+        let logged = format!("{:?}", settings_for_log(&settings));
+        assert!(!logged.contains("0123456789abcdef0123456789abcdef"));
+        assert!(logged.contains("phone_microphone_token"));
+        // The settings themselves keep the token.
+        assert!(settings.phone_microphone_token.is_some());
     }
 
     #[test]

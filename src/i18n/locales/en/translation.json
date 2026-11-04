@@ -38,7 +38,14 @@
         "title": "Microphone",
         "description": "Select your preferred microphone device",
         "placeholder": "Select microphone...",
-        "loading": "Loading..."
+        "loading": "Loading...",
+        "phone": "Phone (Wi-Fi)",
+        "phoneScan": "Scan this code with your phone's camera and open the page in Chrome.",
+        "phoneConnected": "Phone connected",
+        "phoneWaiting": "Waiting for the phone…",
+        "phoneFirewall": "The first time, Windows may ask to allow Chatelle on private networks. Allow it.",
+        "phoneNewCode": "New code",
+        "phoneCertNote": "Chrome warns that the connection is not private. Tap Advanced, then Proceed. This is expected."
       }
     },
     "advanced": {
@@ -143,6 +150,7 @@
     },
     "noInputDeviceTitle": "No Microphone Found",
     "noInputDevice": "No audio input device was detected. Please connect a microphone or headset and try again.",
+    "phoneNotConnected": "Phone not connected — scan the QR code in Settings",
     "recordingFailed": "Failed to start recording: {{error}}",
     "modelLoadFailed": "Failed to load the speech model",
     "transcriptionFailedTitle": "Transcription Failed",
@@ -199,5 +207,16 @@
     "openSettings": "Open settings",
     "allowed": "Allowed",
     "waiting": "Waiting"
+  },
+  "phonePage": {
+    "record": "Record",
+    "stop": "Stop",
+    "connected": "Connected",
+    "reconnecting": "Reconnecting…",
+    "recording": "Recording…",
+    "transcribing": "Transcribing…",
+    "micDenied": "Chrome blocked the microphone. Allow it in the site settings and reload.",
+    "micFailed": "Could not start the microphone. Reload the page and try again.",
+    "replaced": "Opened in another tab. Tap to reconnect here."
   }
 }
