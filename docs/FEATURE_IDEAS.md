@@ -65,6 +65,12 @@ Code: [`src-tauri/src/phone/`](../src-tauri/src/phone/), [`src/components/settin
 | 12  | Recent transcripts in the tray | A short in-memory list (nothing saved to disk) so you can re-type something. Code: [`tray.rs`](../src-tauri/src/tray.rs) | M    | 💡     |
 | 13  | Provider status in the tray    | Show which reply provider was used last and whether its free limit has run out.                                          | S    | 💡     |
 
+## Remote reply
+
+| #   | Feature                    | What it does                                                                                                                                                                                           | Size | Status |
+| --- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | ------ |
+| 14  | Remote reply over Telegram | Watch an open chat while you're away. New messages and a draft reply go to your Telegram, and tapping Send makes the laptop type and send it. Design: [REMOTE_REPLY_DESIGN.md](REMOTE_REPLY_DESIGN.md) | L    | 💡     |
+
 ## Adding an idea
 
 Add a row to the right table with the next number, a one-line description, a size and 💡. Put longer thoughts under that section's **Notes**.
