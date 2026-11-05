@@ -69,7 +69,7 @@ Code: [`src-tauri/src/phone/`](../src-tauri/src/phone/), [`src/components/settin
 
 | #   | Feature                    | What it does                                                                                                                                                                                           | Size | Status |
 | --- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | ------ |
-| 14  | Remote reply over Telegram | Watch an open chat while you're away. New messages and a draft reply go to your Telegram, and tapping Send makes the laptop type and send it. Design: [REMOTE_REPLY_DESIGN.md](REMOTE_REPLY_DESIGN.md) | L    | 💡     |
+| 14  | Remote reply over Telegram | Watch an open chat while you're away. New messages and a draft reply go to your Telegram, and tapping Send makes the laptop type and send it. Design: [REMOTE_REPLY_DESIGN.md](REMOTE_REPLY_DESIGN.md) | L    | 🚧     |
 
 ## Adding an idea
 

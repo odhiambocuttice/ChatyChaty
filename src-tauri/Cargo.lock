@@ -2182,6 +2182,8 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "clap",
+ "core-foundation 0.10.1",
+ "core-graphics",
  "earshot",
  "enigo",
  "env_filter",

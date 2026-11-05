@@ -407,6 +407,19 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: draft_reply_shortcut.to_string(),
         },
     );
+    let watch_chat_shortcut = "ctrl+shift+w";
+    bindings.insert(
+        "watch_chat".to_string(),
+        ShortcutBinding {
+            id: "watch_chat".to_string(),
+            name: "Watch chat".to_string(),
+            description:
+                "Watches the open chat and notifies your Telegram when a new message arrives."
+                    .to_string(),
+            default_binding: watch_chat_shortcut.to_string(),
+            current_binding: watch_chat_shortcut.to_string(),
+        },
+    );
     bindings.insert(
         "cancel".to_string(),
         ShortcutBinding {

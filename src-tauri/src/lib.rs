@@ -8,6 +8,7 @@ mod commands;
 pub mod engine_supervisor;
 mod helpers;
 mod input;
+pub mod key_store;
 mod managers;
 mod media;
 mod memory;
@@ -19,10 +20,12 @@ mod secure_input;
 mod settings;
 mod shortcut;
 mod signal_handle;
+pub mod telegram;
 mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
 mod utils;
+pub mod watch;
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -193,6 +196,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(tray::TrayState::new());
+    app_handle.manage(Arc::new(telegram::TelegramState::new()));
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -317,6 +321,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             .clone();
         phone.keep_in_sync(&phone_app_handle).await;
     });
+
+    // Start Telegram polling if configured
+    telegram::start_polling(app_handle.clone());
 }
 
 #[tauri::command]
@@ -392,40 +399,8 @@ fn run_list_devices() -> i32 {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_args: CliArgs) {
-    // Avoid ggml-metal residency-set teardown assertions when a native engine
-    // outlives the Tauri shutdown sequence (#1902). This must happen before
-    // transcribe-cpp initializes its Metal device. Advanced users can restore
-    // upstream residency behavior with HANDY_METAL_RESIDENCY=1.
-    #[cfg(target_os = "macos")]
-    if std::env::var("HANDY_METAL_RESIDENCY").as_deref() == Ok("1") {
-        // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
-        // inherited value as well when explicitly opting back in.
-        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
-    } else {
-        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
-    }
-
-    // Pin glibc's dynamic mmap threshold before the first large allocation,
-    // so per-dictation transient buffers are returned to the OS on free
-    // instead of accumulating in malloc arenas (#1792). No-op off Linux/glibc.
-    memory::init_allocator();
-
-    // Detect portable mode before anything else
-    portable::init();
-
-    // Device listing is a one-shot run: no window, no single-instance handling.
-    if cli_args.list_devices {
-        // process::exit runs no destructors; the worker ends by itself when
-        // its stdin closes.
-        std::process::exit(run_list_devices());
-    }
-
-    // Parse console logging directives from RUST_LOG, falling back to info-level logging
-    // when the variable is unset
-    let console_filter = build_console_filter();
-
-    let specta_builder = Builder::<tauri::Wry>::new()
+fn build_specta_builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::reset_binding,
@@ -462,6 +437,11 @@ pub fn run(cli_args: CliArgs) {
             commands::get_default_settings,
             commands::get_reply_provider_keys,
             commands::set_reply_provider_key,
+            commands::get_telegram_status,
+            commands::set_telegram_bot_token,
+            commands::unlink_telegram,
+            commands::toggle_watch_session,
+            commands::get_watch_status,
             commands::get_log_text,
             commands::get_log_dir_path,
             commands::set_log_level,
@@ -500,7 +480,43 @@ pub fn run(cli_args: CliArgs) {
             managers::transcription::StreamPhaseEvent,
             transcription_coordinator::RecordingStateEvent,
             actions::TranscriptionCompleteEvent,
-        ]);
+        ])
+}
+
+pub fn run(cli_args: CliArgs) {
+    // Avoid ggml-metal residency-set teardown assertions when a native engine
+    // outlives the Tauri shutdown sequence (#1902). This must happen before
+    // transcribe-cpp initializes its Metal device. Advanced users can restore
+    // upstream residency behavior with HANDY_METAL_RESIDENCY=1.
+    #[cfg(target_os = "macos")]
+    if std::env::var("HANDY_METAL_RESIDENCY").as_deref() == Ok("1") {
+        // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
+        // inherited value as well when explicitly opting back in.
+        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
+    } else {
+        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
+    }
+
+    // Pin glibc's dynamic mmap threshold before the first large allocation,
+    // so per-dictation transient buffers are returned to the OS on free
+    // instead of accumulating in malloc arenas (#1792). No-op off Linux/glibc.
+    memory::init_allocator();
+
+    // Detect portable mode before anything else
+    portable::init();
+
+    // Device listing is a one-shot run: no window, no single-instance handling.
+    if cli_args.list_devices {
+        // process::exit runs no destructors; the worker ends by itself when
+        // its stdin closes.
+        std::process::exit(run_list_devices());
+    }
+
+    // Parse console logging directives from RUST_LOG, falling back to info-level logging
+    // when the variable is unset
+    let console_filter = build_console_filter();
+
+    let specta_builder = build_specta_builder();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     specta_builder
@@ -786,4 +802,20 @@ pub fn run(cli_args: CliArgs) {
         // could block quitting behind a hung model load.
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_specta_bindings() {
+        let specta_builder = build_specta_builder();
+        specta_builder
+            .export(
+                Typescript::default().bigint(BigIntExportBehavior::Number),
+                "../src/bindings.ts",
+            )
+            .expect("Failed to export typescript bindings");
+    }
 }

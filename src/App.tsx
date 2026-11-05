@@ -14,6 +14,7 @@ import {
   AutostartToggle,
   MicrophoneSelector,
   PauseMediaWhileRecording,
+  RemoteReplyPanel,
   ReplyProviderKeys,
   ShortcutInput,
   ShowOverlay,
@@ -150,6 +151,27 @@ function App() {
     };
   }, [t]);
 
+  // Listen for watch mode events
+  useEffect(() => {
+    const unlisteners = [
+      listen<string>("watch-error", (event) => {
+        toast.error(t("errors.watchErrorTitle"), {
+          description: event.payload,
+        });
+      }),
+      listen<boolean>("watch-state-changed", (event) => {
+        if (event.payload) {
+          toast.success(t("errors.watchStarted"));
+        } else {
+          toast.info(t("errors.watchStopped"));
+        }
+      }),
+    ];
+    return () => {
+      unlisteners.forEach((p) => p.then((fn) => fn()));
+    };
+  }, [t]);
+
   // Listen for model loading and download failures and show a toast
   useEffect(() => {
     const unlisteners = [
@@ -271,6 +293,14 @@ function App() {
                       descriptionMode="inline"
                       grouped={true}
                     />
+                    <ShortcutInput
+                      shortcutId="watch_chat"
+                      descriptionMode="inline"
+                      grouped={true}
+                    />
+                  </SettingsGroup>
+                  <SettingsGroup title={t("settings.remoteReply.title")}>
+                    <RemoteReplyPanel />
                   </SettingsGroup>
                   <SettingsGroup title={t("settings.replyKeys.title")}>
                     <ReplyProviderKeys />

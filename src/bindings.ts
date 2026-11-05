@@ -287,6 +287,46 @@ async setReplyProviderKey(provider: string, key: string) : Promise<Result<null, 
     else return { status: "error", error: e  as any };
 }
 },
+async getTelegramStatus() : Promise<Result<TelegramStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_telegram_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setTelegramBotToken(token: string) : Promise<Result<TelegramStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_telegram_bot_token", { token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async unlinkTelegram() : Promise<Result<TelegramStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("unlink_telegram") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async toggleWatchSession() : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toggle_watch_session") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getWatchStatus() : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_watch_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * The log file's text, for the Logs tab. Rotation keeps the file at 500 KB,
  * so the whole file is small enough to show.
@@ -771,6 +811,7 @@ export type StreamPhaseEvent = { phase: StreamPhase }
  * volatile suffix the model may still rewrite.
  */
 export type StreamTextEvent = { committed: string; tentative: string }
+export type TelegramStatus = { configured: boolean; bot_username: string | null; paired: boolean; paired_chat_id: number | null; pairing_code: string | null }
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Handy already ships.

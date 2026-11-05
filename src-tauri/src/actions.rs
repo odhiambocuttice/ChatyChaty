@@ -558,12 +558,43 @@ impl ShortcutAction for DraftReplyAction {
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
 }
 
+// Watch Chat Action
+struct WatchChatAction;
+
+impl ShortcutAction for WatchChatAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        if crate::watch::is_watching() {
+            crate::watch::stop_watch_session();
+            play_feedback_sound(app, SoundType::Stop);
+            let _ = app.emit("watch-state-changed", false);
+        } else {
+            match crate::watch::start_watch_session(app.clone()) {
+                Ok(info) => {
+                    play_feedback_sound(app, SoundType::Start);
+                    let _ = app.emit("watch-state-changed", true);
+                    log::info!("Started watching: {info}");
+                }
+                Err(e) => {
+                    error!("Failed to start watch session: {e}");
+                    let _ = app.emit("watch-error", e);
+                }
+            }
+        }
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
     map.insert(
         "draft_reply".to_string(),
         Arc::new(DraftReplyAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "watch_chat".to_string(),
+        Arc::new(WatchChatAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe".to_string(),

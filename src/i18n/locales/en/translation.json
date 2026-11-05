@@ -26,6 +26,10 @@
           "draft_reply": {
             "name": "Draft Reply",
             "description": "Reads the chat on screen and types a reply into the focused input."
+          },
+          "watch_chat": {
+            "name": "Watch Chat",
+            "description": "Watches the open chat and notifies your Telegram when a new message arrives."
           }
         },
         "errors": {
@@ -107,6 +111,24 @@
       "remove": "Remove",
       "saveFailed": "Could not save the key: {{error}}"
     },
+    "remoteReply": {
+      "title": "Telegram Remote Reply",
+      "description": "Watch an active chat while away and receive new messages and draft replies on Telegram.",
+      "botToken": "Bot Token",
+      "botTokenPlaceholder": "Paste Telegram bot token",
+      "saveToken": "Save",
+      "removeToken": "Remove",
+      "saveFailed": "Could not save token: {{error}}",
+      "botConnected": "Bot: @{{username}}",
+      "statusPaired": "Paired with your Telegram",
+      "statusUnpaired": "Ready to pair",
+      "pairInstructions": "Open Telegram, start your bot, and send this code to connect:",
+      "pairCommand": "/pair {{code}}",
+      "copyCommand": "Copy Command",
+      "copied": "Copied!",
+      "unlink": "Unlink Account",
+      "disclaimer": "Note: Your laptop stays awake while watching. Click your chat's input box, then press your Watch shortcut to start."
+    },
     "tabs": {
       "label": "Settings",
       "shortcuts": "Shortcuts",
@@ -155,6 +177,9 @@
     "modelLoadFailed": "Failed to load the speech model",
     "transcriptionFailedTitle": "Transcription Failed",
     "draftReplyFailedTitle": "Draft Reply Failed",
+    "watchErrorTitle": "Watch Mode Failed",
+    "watchStarted": "Watch Mode Started",
+    "watchStopped": "Watch Mode Stopped",
     "typeFailedTitle": "Failed to Type Text",
     "typeFailed": "Text could not be typed into the active application.",
     "modelDownloadFailed": "Failed to download the speech model"

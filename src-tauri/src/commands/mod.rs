@@ -37,6 +37,65 @@ pub fn set_reply_provider_key(provider: String, key: String) -> Result<(), Strin
     crate::reply::save_provider_key(&provider, &key)
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn get_telegram_status(app: AppHandle) -> Result<crate::telegram::TelegramStatus, String> {
+    let state = app.state::<std::sync::Arc<crate::telegram::TelegramState>>();
+    Ok(state.get_status())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_telegram_bot_token(
+    app: AppHandle,
+    token: String,
+) -> Result<crate::telegram::TelegramStatus, String> {
+    let token = token.trim();
+    if token.is_empty() {
+        let _ = crate::key_store::delete(crate::telegram::TELEGRAM_BOT_TOKEN_KEY);
+        let _ = crate::key_store::delete(crate::telegram::TELEGRAM_CHAT_ID_KEY);
+        let state = app.state::<std::sync::Arc<crate::telegram::TelegramState>>();
+        *state.bot_token.lock().unwrap() = None;
+        *state.paired_chat_id.lock().unwrap() = None;
+        Ok(state.get_status())
+    } else {
+        let username = crate::telegram::get_bot_username(token)?;
+        crate::key_store::write(crate::telegram::TELEGRAM_BOT_TOKEN_KEY, token)?;
+        let state = app.state::<std::sync::Arc<crate::telegram::TelegramState>>();
+        *state.bot_token.lock().unwrap() = Some(token.to_string());
+        crate::telegram::start_polling(app.clone());
+        log::info!("Telegram bot configured: @{username}");
+        Ok(state.get_status())
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn unlink_telegram(app: AppHandle) -> Result<crate::telegram::TelegramStatus, String> {
+    let _ = crate::key_store::delete(crate::telegram::TELEGRAM_CHAT_ID_KEY);
+    let state = app.state::<std::sync::Arc<crate::telegram::TelegramState>>();
+    *state.paired_chat_id.lock().unwrap() = None;
+    Ok(state.get_status())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn toggle_watch_session(app: AppHandle) -> Result<bool, String> {
+    if crate::watch::is_watching() {
+        crate::watch::stop_watch_session();
+        Ok(false)
+    } else {
+        crate::watch::start_watch_session(app)?;
+        Ok(true)
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_watch_status() -> Result<bool, String> {
+    Ok(crate::watch::is_watching())
+}
+
 /// The log file's text, for the Logs tab. Rotation keeps the file at 500 KB,
 /// so the whole file is small enough to show.
 #[tauri::command]
