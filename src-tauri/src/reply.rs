@@ -93,8 +93,11 @@ const PROVIDERS: [Provider; 3] = [
 /// meetup: a live test answered "Where should I pick you up?" with "you could
 /// just text 'the office cafe bar around the front of HQ' if they ask where",
 /// and another answered "I am already at the bar waiting for you" with "will
-/// swing by in about 35 minutes". The user never meets in person, so this rule
-/// comes before the others, and `promises_to_meet` checks the reply as well.
+/// swing by in about 35 minutes". The user never meets in person, but telling
+/// a client they cannot meet creates an immediate dead end, so the reply must
+/// deflect warmly without ever saying you can't meet. `promises_to_meet`,
+/// `explicitly_refuses_to_meet`, `has_unprompted_extreme_kink`, and
+/// `has_cliche_position_cta` check the reply as well.
 ///
 /// Each draft sees only the screenshot, so the user's earlier replies look like
 /// any other message. A live test answered "What do you like to make?" by
@@ -132,17 +135,25 @@ fn instructions() -> String {
            sitting toward the right, with a right-aligned timestamp, or marked \"You\", \"Me\" \
            or \"You wrote this message\", was sent by the user and matches the profile panel \
            marked \"you are\" when one is shown. Every plain white or grey left-aligned bubble \
-           (with a left-aligned timestamp) was sent by the other side. A rectangular image box \
-           inside a message bubble — even when blurred into a plain grey or skin-toned square, \
-           pixelated, dimmed or marked with an eye icon — is a photo someone sent in the chat, \
-           not their avatar or blank space. Never answer a question inside a coloured bubble \
+           (with a left-aligned timestamp) was sent by the other side. A photo is a large rectangular \
+           image box inside a message bubble — even when blurred into a plain grey or skin-toned \
+           square, pixelated, dimmed or marked with an eye icon — taking up a prominent rectangular \
+           media card in the bubble. Small interface controls — such as the small grey report or \
+           warning triangle (▲), status flags, avatars, timestamps, emojis, or paperclips (📎) — \
+           are UI icons, NOT photos. Never answer a question inside a coloured bubble \
            (never answer the user's own question from the other side's point of view), and \
            never ask the other side about an event or detail that appeared only inside the \
            user's coloured bubble: when a short white bubble sits below a coloured question \
            (for instance the user complained about her partner and asked \"Are you single?\" and \
            the white bubble below says \"I may not be lol\"), read the white bubble as their \
            direct answer about themselves and react playfully to what they just admitted (such \
-           as neither of them being single) instead of giving a generic filler line.\n\
+           as neither of them being single) instead of giving a generic filler line. Similarly, \
+           when the white bubble echoes or repeats the user's question words (for example \
+           if the user asked a question and the white bubble replies \"Do you mind. It's a must\" \
+           or \"Mind? Not at all\"), the other side is emphatically answering that it is a must \
+           for them — NEVER misread it as a question directed back at the user, and NEVER answer \
+           the user's own question (never say \"I do not mind at all\"). React passionately to their \
+           enthusiastic answer.\n\
          - Some screens show notes, logs or warning banners that only the user's team can \
            see, such as a yellow box, sidebars of timestamped customer log entries (labelled \
            for example UPDATES, OTHER, PERSONAL INFO, WORK, FAMILY or SEXUAL PREFERENCES under \
@@ -158,29 +169,36 @@ fn instructions() -> String {
            from the user mentioned getting together, checking a schedule or asking when they \
            are free, never continue promising to check a schedule, never say \"I will let you \
            know\", and never offer to arrange a time — acknowledge them warmly or playfully \
-           and steer straight into teasing or chatting about their day. When the other side \
+           and steer straight into teasing or chatting about their day. Crucially: never directly \
+           say you cannot meet, never say that meeting in person is not something you do, never \
+           say you don't meet in person, and never say you only chat online or only chat here. \
+           Telling a client that you cannot meet makes them immediately see a dead end. Don't \
+           suggest meeting, but don't say you can't meet either. When the other side brings up \
+           meeting (such as \"we need to meet each other\", \"we should meet\", \"can we meet?\", \
+           \"when can we meet?\", or \"let's meet up\"), asks more generally whether or when \
+           they can meet, or invites the user over (such as \"come to my place\", \"tell me when\" \
+           or \"when can I expect you\"), never accept and never blurt out a cold or mood-killing \
+           refusal like \"I cannot meet up in person\", \"meeting in person is not something I do\", \
+           \"I cannot make it to your place\" or \"in my thoughts\": in an everyday or early \
+           chat, keep the warmth alive by deflecting playfully and lightly — say that the thought \
+           is tempting, that they are getting ahead of themselves, or that you really enjoy \
+           taking your time and building a genuine connection and vibe first before even thinking \
+           about meeting, and steer into an engaging question about them. In an already sexually \
+           explicit chat, glide past the meetup logistics without promising to come over and pour \
+           that heat straight into vivid physical desire and what you would do to each other, \
+           ending with an engaging question. Distinguish an actual meetup request from longing \
+           or fantasy: hypothetical \"what if\" daydreams, sexual fantasies or wistful longing \
+           in an already flirty or intimate chat — such as imagining whispering in each other's \
+           ear, waking up together, wanting each other's body in person or wishing they could \
+           travel together one day — are imagination and desire, not a meetup arrangement; and \
+           if neither side can host, turn that tension straight into explicit or playful teasing \
+           rather than asking how to meet or how they handle finding a place. Play along with that \
+           desire and imagination without bringing up an unprompted refusal and without ever \
+           planning, promising or hinting at a real meetup, time or place. When the other side \
            thinks a meetup is already planned right now or says they are already waiting, say \
            clearly and kindly that the user cannot make it, so they do not keep waiting. Do \
            not invent an excuse. Use \"cannot make it\" only when they think a meeting is \
-           already happening today or say they are already waiting at a spot. When the other \
-           side invites the user over or asks more generally whether or when they can meet or \
-           come to their place (such as \"come to my place\", \"tell me when\" or \"when can \
-           I expect you\"), never accept and never blurt out a cold or mood-killing refusal \
-           like \"I cannot meet up in person\", \"I cannot make it to your place\" or \"in my \
-           thoughts\": in an everyday or early chat, keep the warmth alive by saying lightly \
-           that the thought is tempting or that you enjoy taking your time building a \
-           connection first, and in an already sexually explicit chat, glide past the meetup \
-           logistics without promising to come over and pour that heat straight into vivid \
-           physical desire and what you would do to each other, ending with an engaging \
-           question. Distinguish an actual meetup request from longing or fantasy: hypothetical \
-           \"what if\" daydreams, sexual fantasies or wistful longing in an already flirty or \
-           intimate chat — such as imagining whispering in each other's ear, waking up \
-           together, wanting each other's body in person or wishing they could travel together \
-           one day — are imagination and desire, not a meetup arrangement; and if neither side \
-           can host, turn that tension straight into explicit or playful teasing rather than \
-           asking how to meet or how they handle finding a place. Play along with that desire \
-           and imagination without bringing up an unprompted refusal and without ever planning, \
-           promising or hinting at a real meetup, time or place.\n\
+           already happening today or say they are already waiting at a spot.\n\
          - The user never shares personal contact details: no phone number, email address, \
            social media account or username, and no other way to reach the user outside this \
            conversation. This rule has no exceptions. Never suggest a phone call, video call \
@@ -193,7 +211,9 @@ fn instructions() -> String {
            explicit) with a question. Never repeat their details back. Use this dodge only \
            when the other side asks for contact details, sends theirs or asks to call or talk \
            somewhere else — never say you prefer to keep chatting right here when they have \
-           not asked to leave this chat. Asking to send or see a photo inside this chat is \
+           not asked to leave this chat. Never say you only chat online or prefer chatting right \
+           here to deflect a meetup — only deflect meetups by focusing on taking time to connect \
+           and get to know each other first. Asking to send or see a photo inside this chat is \
            normal chatting, not contact details: welcome it warmly (keeping it wholesome if a \
            non-sexual banner is shown), or tease about sending photos here.\n\
          - The user's first name and home city or state are not contact details. When the \
@@ -250,13 +270,17 @@ fn instructions() -> String {
            a photo (a blurred dark-grey or skin-toned square or a dimmed photo with an eye icon \
            above its text); if their bottom-most white bubble contains only text, never thank them \
            for a photo and never claim they sent a photo, even if an earlier purple bubble had a \
-           photo or their text mentions photos or body parts. Whenever the newest left-side white \
-           bubble from the other side contains a photo, always acknowledge the new photo in your \
-           very first sentence, thank them for sharing it, and compliment it nicely (for example \
-           \"Thank you for sharing that hot pic with me\" or \"That's a nice picture that you've \
-           sent me\"). Do not refer to it as \"a huge code\" and do not explicitly call it a \
-           \"dick pic\": keep the compliment natural, appreciative, and hot or wholesome to \
-           match the chat, answer any question in their message directly, and end with an \
+           photo or their text mentions photos or body parts. Small UI icons, including the small \
+           grey triangle report/flag button beside the text, are NOT photos. Whenever a bubble \
+           contains written conversation text (words, questions, sentences), treat it as a \
+           text-only message. Never open with \"Thank you for sharing that picture\" or \"Thank you \
+           for sharing that photo\" when the newest message contains text words and no actual \
+           large image attachment. Whenever the newest left-side white bubble from the other side \
+           contains a photo, always acknowledge the new photo in your very first sentence, thank \
+           them for sharing it, and compliment it nicely (for example \"Thank you for sharing \
+           that hot pic with me\"). Do not refer to it as \"a huge code\" and do not explicitly \
+           call it a \"dick pic\": keep the compliment natural, appreciative, and hot or wholesome \
+           to match the chat, answer any question in their message directly, and end with an \
            engaging question.\n\
          - Never use the word love or any word made from it, such as loved, loving or \
            lovely, even when the other side uses it first. Use other words instead, such as \
@@ -286,17 +310,36 @@ fn instructions() -> String {
            and acts plainly; if the chat is warmly romantic, sensual or cheeky without crude \
            words, match that sensual or cheeky heat. Vary how you open and phrase sentences \
            naturally — prefer \"I would like you to...\", \"I'd really like you to...\", \"Oh, \
-           wow...\", \"Mmm, hearing that...\", \"Thank you for sharing...\" or \"I bet...\" \
+           wow...\", \"Mmm, hearing that...\", \"Hearing you describe that...\" or \"I bet...\" \
            rather than repeating \"I want you to\", and avoid tacking \"right now\" onto \
            sentences. React to the specific details they just wrote rather than giving a \
-           generic line, and read their whole newest message first so you never ask a question \
-           they already answered in it (for instance, do not ask how many inches their dick is \
-           if they just wrote 7+, and do not ask which position they want to start with if \
-           they just described starting in missionary). Answer dirty talk, explicit questions \
+           generic line: read their whole newest message first so you never ask a question \
+           they already answered in it. If they described an act, position, place or preference \
+           (such as cowgirl, grinding, or oral), accept and build upon their exact answer \
+           with vivid dirty talk describing that specific act — NEVER ask them which position \
+           they want to start with or re-ask something they just chose. Answer dirty talk, explicit questions \
            and sexual fantasies head-on — never water them down, never thank them stiffly for \
-           kind words, and never dodge into innocent small talk. Express desire and excitement \
-           freely while still keeping every hard rule above: no word love, no real-life \
-           commitment, no real meetup and no contact details.\n\
+           kind words, and never dodge into innocent small talk. Never introduce unprompted extreme \
+           fetishes or kinks (such as golden showers, watersports, or humiliation) unless the other \
+           person specifically brought that kink up first. Keep the dirty talk focused on the mutual \
+           sensual and sexual acts already being discussed. To keep the conversation moving forward \
+           instead of repeating questions, escalate the scene naturally: when they answer a question, \
+           acknowledge how hot their answer is, describe what it feels like in the moment, and ask an \
+           engaging question that moves to the next detail rather than repeating the same question \
+           or resetting the conversation. Crucially, spice up the closing CTA (closing question) so \
+           it never sounds like a repetitive signature bot line: NEVER end with the generic cliché \
+           \"Which position do you want to start with?\", \"What position do you want to start with?\", \
+           or \"What position do you want?\". Instead, craft a tantalizing, situation-specific closing \
+           CTA that fits the exact physical action and sensations underway, such as asking where \
+           their hands are right now (for instance \"Where are your hands while I'm doing that to you?\"), \
+           touch and control (such as \"Are you going to grab my hips and pull me close, or let me ride \
+           you wild?\"), pacing and intensity (such as \"Do you want me to take you slow and deep, or \
+           drive you wild fast?\"), stamina (such as \"How long do you think you can last once you feel \
+           me around you?\"), the next physical move (such as \"What are you going to do to me once \
+           you've tasted every drop?\" or \"Where do you want my mouth next?\"), or sensory teasing \
+           (such as \"Can you feel how wet and tight I am for you?\"). Express desire and excitement \
+           freely while still keeping every hard rule above: no word love, no real-life commitment, \
+           no real meetup and no contact details.\n\
          - When the user's own earlier messages on screen are not flirty or sexual (including \
            when none of the user's messages are visible yet), and the other side says they \
            have feelings for the user or sends compliments, pet names, kisses or sexual \
@@ -310,7 +353,16 @@ fn instructions() -> String {
            reply to the newest message from the other side (the lowest white or left-side \
            bubble), never to an earlier question or to the user's own coloured bubble.\n\
          - The user's own messages on screen are already sent. Never repeat or reword one of \
-           them: write something new that moves the conversation on.\n\
+           them: write something new that moves the conversation on. Avoid the repetition \
+           of messages and questions: never re-ask any question that was already asked in earlier \
+           bubbles on screen (such as asking about positions, locations, preferences or hobbies \
+           if already asked earlier in the chat), and never ask a question about something the other \
+           side has already answered. Read all visible messages and build on their exact words — \
+           for example, if they already chose an act, position, place or fantasy (such as riding \
+           cowgirl, kissing head to toe, or trying a food), react directly to those specific \
+           chosen details with fresh description rather than restarting or looping back to ask \
+           them what they want to do or which position they want. Always move the conversation \
+           and fantasy forward to the next step, rather than repeating earlier questions or lines.\n\
          - Match the language and tone of the user's earlier messages, but not their wording. \
            Write in simple, natural, everyday texting English — direct and human, never \
            flowery, poetic or literary, and with no em-dashes.\n\
@@ -359,7 +411,7 @@ fn build_request(
                     // love to hear more" in 3 of 10 live replies; here, 0 of 10.
                     {
                         "type": "text",
-                        "text": "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Look at the bottom-most white left-side message bubble (below the last purple/coloured bubble): if that bottom-most white bubble has a photo box inside it (including a blurred dark-grey square or an image with an eye icon above its text — do not re-thank an older photo higher up above a purple reply), open by thanking them for sharing the photo and complimenting it (complimenting his huge, big or hot dick/cock explicitly by name whenever a man sends a blurred photo in an already sexually explicit chat with no non-sexual banner). If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. If that bottom-most white bubble says goodbye, threatens to leave, complains that the user only wants to sext, or asks for the user's name or location, respond to that first and directly: give the user's first name and city from the user's 'you are' profile card or earlier coloured bubbles if shown (never invent them), say warmly that you enjoy talking with them and want to get to know them, and end with an easy, tempting question that keeps them chatting. If the other side has been giving short one-line answers on the same topic, react briefly and switch to a fresh subject. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them."
+                        "text": "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. Note that small grey report triangle icons (▲), emojis, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (even if there is a tiny grey report icon beside it), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture' or 'Thank you for sharing that photo', and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), open by thanking them for sharing the photo and complimenting it (complimenting his huge, big or hot dick/cock explicitly by name whenever a man sends a blurred photo in an already sexually explicit chat with no non-sexual banner). Never answer the user's own question (if the client echoes your question, like 'Do you mind. It's a must', react to their answer rather than saying 'I don't mind'). Never introduce unprompted extreme kinks (such as golden showers). Never repeat messages, questions, or topics: look at all earlier messages on screen and do NOT re-ask any question that was already asked or answered earlier in the chat (for example, if positions, treats or preferences were already asked or chosen, do NOT ask about them again). NEVER use the generic signature question 'Which/what position do you want to start with?'. Always spice up the closing CTA (closing question) to match the immediate scene: ask a tempting, situation-specific question about his hands (e.g. 'Where are your hands while I'm doing that to you?'), touch and control ('Are you going to grab my hips, or let me take full control?'), pacing ('Do you want me slow and deep or wild and fast?'), stamina ('How long do you think you can last?'), or what happens next ('What are you going to do to me once you've tasted every drop?'). React directly to their latest words and advance the conversation forward with fresh details and a spicy closing CTA. If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. If that bottom-most white bubble says goodbye, threatens to leave, complains that the user only wants to sext, or asks for the user's name or location, respond to that first and directly: give the user's first name and city from the user's 'you are' profile card or earlier coloured bubbles if shown (never invent them), say warmly that you enjoy talking with them and want to get to know them, and end with an easy, tempting question that keeps them chatting. If the other side has been giving short one-line answers on the same topic, react briefly and switch to a fresh subject. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them."
                     }
                 ]
             }
@@ -391,6 +443,95 @@ fn build_love_rewrite_request(
                             want, crave, wonderful or sweet) while keeping the exact same tone, \
                             explicitness, meaning, length and closing question. Reply with the \
                             rewritten message text only — no quotes and no explanation."
+            },
+            { "role": "user", "content": draft }
+        ]
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    body
+}
+
+/// Asks the same provider to rewrite a draft that explicitly refused to meet,
+/// without resending the screenshot.
+fn build_meet_refusal_rewrite_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    draft: &str,
+) -> Value {
+    let mut body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Rewrite the chat message below so it NEVER says you cannot meet, never says \
+                            meeting in person is not something you do, and never tells the other person \
+                            that you do not meet. Do not create a dead end. Deflect warmly or playfully \
+                            by saying you like to take your time getting to know someone and building a \
+                            connection first, without accepting, planning or suggesting any meetup. \
+                            Keep the exact same tone, length and closing question. Reply with the \
+                            rewritten message text only — no quotes and no explanation."
+            },
+            { "role": "user", "content": draft }
+        ]
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    body
+}
+
+/// Asks the same provider to rewrite a draft that introduced an unprompted extreme kink,
+/// keeping the reply focused on mutual sensual/sexual acts without extreme fetishes.
+fn build_extreme_kink_rewrite_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    draft: &str,
+) -> Value {
+    let mut body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Rewrite the chat message below so it completely removes any mention of extreme \
+                            kinks (such as golden showers, watersports, or urination). Keep the dirty talk \
+                            focused on natural mutual sexual and sensual acts. Keep the exact same tone and explicitness. \
+                            Reply with the rewritten message text only — no quotes and no explanation."
+            },
+            { "role": "user", "content": draft }
+        ]
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    body
+}
+
+/// Asks the same provider to rewrite a draft that ended with a generic position CTA,
+/// spicing up the closing question with an enticing, scene-specific CTA.
+fn build_spicy_cta_rewrite_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    draft: &str,
+) -> Value {
+    let mut body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Rewrite the chat message below: replace the generic closing question at the end \
+                            (such as asking what position to start with) with a spicy, tantalizing, \
+                            situation-specific closing CTA question that fits the exact scene (for example \
+                            asking where his hands are, whether he likes it slow or fast, how long he can \
+                            last, or what he wants to do next). Keep the exact same tone and explicitness. \
+                            Reply with the rewritten message text only — no quotes and no explanation."
             },
             { "role": "user", "content": draft }
         ]
@@ -523,6 +664,17 @@ fn parse_reply(response: &Value) -> Result<String, String> {
     }
     if promises_to_meet(text) {
         return Err(format!("the reply promised to meet in person: {text}"));
+    }
+    if explicitly_refuses_to_meet(text) {
+        return Err(format!("the reply explicitly refused to meet: {text}"));
+    }
+    if has_unprompted_extreme_kink(text) {
+        return Err(format!(
+            "the reply introduced an unprompted extreme kink: {text}"
+        ));
+    }
+    if has_cliche_position_cta(text) {
+        return Err(format!("the reply used a generic position CTA: {text}"));
     }
     if shares_contact_details(text) {
         return Err("the reply contained an email address or phone number".to_string());
@@ -668,6 +820,125 @@ fn promises_to_meet(text: &str) -> bool {
     })
 }
 
+/// Phrases that explicitly refuse to meet or say the user does not meet in person.
+/// Saying this creates an immediate dead end for the client, so such a reply is
+/// never typed and must be rewritten or dropped.
+const MEETUP_REFUSALS: [&str; 44] = [
+    "meeting in person is not something",
+    "meeting in person isn't something",
+    "meeting in person is not an option",
+    "meeting in person isn't an option",
+    "meeting in person is off the table",
+    "meeting up is not something",
+    "meeting up isn't something",
+    "meeting is not something i do",
+    "meeting isn't something i do",
+    "meet in person is not something",
+    "i don't meet in person",
+    "i do not meet in person",
+    "i don't meet up in person",
+    "i do not meet up in person",
+    "i don't meet anyone in person",
+    "i do not meet anyone in person",
+    "i don't meet people in person",
+    "i do not meet people in person",
+    "i never meet in person",
+    "i never meet up in person",
+    "i never meet anyone in person",
+    "i never meet people in person",
+    "i never meet clients",
+    "i don't meet clients",
+    "i cannot meet in person",
+    "i can't meet in person",
+    "i cannot meet up in person",
+    "i can't meet up in person",
+    "i cannot meet up",
+    "i can't meet up",
+    "i don't meet up",
+    "i do not meet up",
+    "i don't meet anyone",
+    "i do not meet anyone",
+    "i don't do meetups",
+    "i do not do meetups",
+    "i never do meetups",
+    "i don't do in-person",
+    "i do not do in-person",
+    "not looking to meet",
+    "not able to meet in person",
+    "unable to meet in person",
+    "won't meet in person",
+    "will not meet in person",
+];
+
+/// True when the reply explicitly tells the client that the user cannot meet,
+/// doesn't meet in person, or doesn't do meetups. Such dead-end refusals shut
+/// down the conversation and are never typed.
+fn explicitly_refuses_to_meet(text: &str) -> bool {
+    let normalized = text.to_lowercase().replace(['\u{2019}', '’'], "'");
+    if MEETUP_REFUSALS
+        .iter()
+        .any(|phrase| normalized.contains(phrase))
+    {
+        return true;
+    }
+
+    let mentions_meeting = normalized.contains("meeting in person")
+        || normalized.contains("meet in person")
+        || normalized.contains("meet up");
+    if mentions_meeting
+        && (normalized.contains("not something i do")
+            || normalized.contains("isn't something i do")
+            || normalized.contains("not an option")
+            || normalized.contains("off the table"))
+    {
+        return true;
+    }
+
+    false
+}
+
+/// True when the reply introduces extreme fetishes or kinks that were not in the conversation.
+/// Such replies are never typed and must be rewritten or dropped.
+fn has_unprompted_extreme_kink(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    const EXTREME_KINKS: [&str; 8] = [
+        "golden shower",
+        "watersport",
+        "watersports",
+        "piss on",
+        "pissing on",
+        "pee on you",
+        "pee on me",
+        "drink my piss",
+    ];
+    EXTREME_KINKS.iter().any(|kink| lower.contains(kink))
+}
+
+/// Phrases that use the overused, generic start-position closing question.
+/// These read as an AI signature cliché rather than natural human texting,
+/// so they are never typed and are rewritten with a situational, spicy CTA.
+const CLICHE_POSITION_CTAS: [&str; 12] = [
+    "position do you want to start with",
+    "position would you like to start with",
+    "position do you want to start",
+    "position would you like to start",
+    "position do you prefer to start",
+    "position do you want to try first",
+    "position do you want to do first",
+    "which position do you want",
+    "what position do you want",
+    "which position do you like to start",
+    "what position do you like to start",
+    "which position do we start with",
+];
+
+fn has_cliche_position_cta(text: &str) -> bool {
+    let lower = text.to_lowercase().replace(['\u{2019}', '’'], "'");
+    CLICHE_POSITION_CTAS
+        .iter()
+        .any(|phrase| lower.contains(phrase))
+}
+
 /// Sends one request and returns the reply text. Any HTTP error, including a
 /// used-up limit (429) or no credits (402), is an `Err`.
 fn request_reply(url: &str, key: &str, body: &Value) -> Result<String, String> {
@@ -711,8 +982,8 @@ fn try_attempt(attempt: &Attempt, key: &str, jpeg_base64: &str) -> Result<String
         jpeg_base64,
     );
     match request_reply(attempt.url, key, &body) {
-        Err(e) => match e.strip_prefix("the reply used the word love: ") {
-            Some(draft) => {
+        Err(e) => {
+            if let Some(draft) = e.strip_prefix("the reply used the word love: ") {
                 info!(
                     "{} used the word love, asking it to rewrite the reply",
                     attempt.name
@@ -724,9 +995,48 @@ fn try_attempt(attempt: &Attempt, key: &str, jpeg_base64: &str) -> Result<String
                     draft,
                 );
                 request_reply(attempt.url, key, &rewrite)
+            } else if let Some(draft) = e.strip_prefix("the reply explicitly refused to meet: ") {
+                info!(
+                    "{} explicitly refused to meet, asking it to rewrite the reply",
+                    attempt.name
+                );
+                let rewrite = build_meet_refusal_rewrite_request(
+                    attempt.model,
+                    attempt.max_tokens,
+                    attempt.reasoning_effort,
+                    draft,
+                );
+                request_reply(attempt.url, key, &rewrite)
+            } else if let Some(draft) =
+                e.strip_prefix("the reply introduced an unprompted extreme kink: ")
+            {
+                info!(
+                    "{} introduced an extreme kink, asking it to rewrite the reply",
+                    attempt.name
+                );
+                let rewrite = build_extreme_kink_rewrite_request(
+                    attempt.model,
+                    attempt.max_tokens,
+                    attempt.reasoning_effort,
+                    draft,
+                );
+                request_reply(attempt.url, key, &rewrite)
+            } else if let Some(draft) = e.strip_prefix("the reply used a generic position CTA: ") {
+                info!(
+                    "{} used a generic position CTA, asking it to spice up the closing question",
+                    attempt.name
+                );
+                let rewrite = build_spicy_cta_rewrite_request(
+                    attempt.model,
+                    attempt.max_tokens,
+                    attempt.reasoning_effort,
+                    draft,
+                );
+                request_reply(attempt.url, key, &rewrite)
+            } else {
+                Err(e)
             }
-            None => Err(e),
-        },
+        }
         ok => ok,
     }
 }
@@ -1137,6 +1447,11 @@ mod tests {
         assert!(text.contains("The user never meets anyone in person"));
         assert!(text.contains("says they are already waiting"));
         assert!(text.contains("Do not invent an excuse"));
+        assert!(text.contains("makes them immediately see a dead end"));
+        assert!(text.contains("never say that meeting in person is not something you do"));
+        assert!(text.contains(
+            "Never say you only chat online or prefer chatting right here to deflect a meetup"
+        ));
     }
 
     #[test]
@@ -1260,6 +1575,10 @@ mod tests {
         assert!(text.contains("Never repeat or reword one of them"));
         assert!(text.contains("not their wording"));
         assert!(text.contains("answer it in one short, general sentence first"));
+        assert!(text.contains("Avoid the repetition"));
+        assert!(
+            text.contains("never re-ask any question that was already asked in earlier bubbles")
+        );
         assert!(!text.contains("Match the language and tone of the user's earlier messages."));
     }
 
@@ -1322,6 +1641,53 @@ mod tests {
             let response = json!({ "choices": [{ "message": { "content": reply } }] });
             let error = parse_reply(&response).unwrap_err();
             assert!(error.contains("promised to meet"), "{reply}");
+        }
+    }
+
+    #[test]
+    fn a_reply_that_explicitly_refuses_to_meet_is_never_typed() {
+        for reply in [
+            "Meeting in person is not something I do, but I really enjoy talking and getting to \
+             know you right here. What kind of things do you usually like to do when you have free \
+             time on the weekend?",
+            "Meeting in person isn't something I do.",
+            "I don't meet in person, but I enjoy chatting here.",
+            "I cannot meet in person.",
+            "I can't meet up in person, sorry!",
+            "I do not meet anyone in person.",
+            "I don't do meetups, but tell me about your day.",
+            "Meeting in person is off the table.",
+            "I never meet clients.",
+        ] {
+            let response = json!({ "choices": [{ "message": { "content": reply } }] });
+            let error = parse_reply(&response).unwrap_err();
+            assert!(error.contains("explicitly refused to meet"), "{reply}");
+        }
+    }
+
+    #[test]
+    fn a_reply_with_unprompted_extreme_kink_is_never_typed() {
+        for reply in [
+            "I definitely do not mind at all; I would really want you to taste me and swallow every drop. Do you enjoy a golden shower?",
+            "I'd really like to try watersports with you sometime soon.",
+            "Can I piss on you while you're in the shower?",
+        ] {
+            let response = json!({ "choices": [{ "message": { "content": reply } }] });
+            let error = parse_reply(&response).unwrap_err();
+            assert!(error.contains("unprompted extreme kink"), "{reply}");
+        }
+    }
+
+    #[test]
+    fn a_reply_with_generic_position_cta_is_never_typed() {
+        for reply in [
+            "I definitely do not mind at all, I would really want you to taste me and swallow every drop. What position do you want to start with?",
+            "Hearing you say that turns me on so much. Which position do you want to start with?",
+            "I'd really like to feel you on top of me. What position do you want?",
+        ] {
+            let response = json!({ "choices": [{ "message": { "content": reply } }] });
+            let error = parse_reply(&response).unwrap_err();
+            assert!(error.contains("generic position CTA"), "{reply}");
         }
     }
 
@@ -1686,6 +2052,78 @@ mod tests {
     }
 
     #[test]
+    fn a_slip_with_meet_refusal_is_rewritten_by_the_same_provider() {
+        let (url, server) = serve_sequence(vec![
+            (
+                "200 OK",
+                r#"{"choices":[{"message":{"content":"Meeting in person is not something I do, but I really enjoy talking with you. What music do you like?"}}]}"#,
+            ),
+            (
+                "200 OK",
+                r#"{"choices":[{"message":{"content":"You're getting ahead of yourself! I enjoy taking my time to see if we click first. What music do you like?"}}]}"#,
+            ),
+        ]);
+        let attempts = [
+            Attempt {
+                name: "First",
+                url: &url,
+                model: "m",
+                max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
+                key: Some("k1".into()),
+            },
+            Attempt {
+                name: "Second",
+                url: "http://127.0.0.1:9/must-not-be-called",
+                model: "m",
+                max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
+                key: Some("k2".into()),
+            },
+        ];
+        assert_eq!(
+            draft_with_fallback(&attempts, "QUJD").unwrap(),
+            "You're getting ahead of yourself! I enjoy taking my time to see if we click first. What music do you like?"
+        );
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0].contains("data:image/jpeg;base64,QUJD"));
+        assert!(!requests[1].contains("data:image/jpeg;base64"));
+        assert!(requests[1].contains("Meeting in person is not something I do"));
+    }
+
+    #[test]
+    fn a_slip_with_generic_position_cta_is_rewritten_with_a_spicy_cta() {
+        let (url, server) = serve_sequence(vec![
+            (
+                "200 OK",
+                r#"{"choices":[{"message":{"content":"I would really want you to taste me and swallow every drop. What position do you want to start with?"}}]}"#,
+            ),
+            (
+                "200 OK",
+                r#"{"choices":[{"message":{"content":"I would really want you to taste me and swallow every drop. Where are your hands while I'm doing that to you?"}}]}"#,
+            ),
+        ]);
+        let attempts = [Attempt {
+            name: "First",
+            url: &url,
+            model: "m",
+            max_tokens: MAX_REPLY_TOKENS,
+            reasoning_effort: None,
+            key: Some("k1".into()),
+        }];
+        assert_eq!(
+            draft_with_fallback(&attempts, "QUJD").unwrap(),
+            "I would really want you to taste me and swallow every drop. Where are your hands while I'm doing that to you?"
+        );
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0].contains("data:image/jpeg;base64,QUJD"));
+        assert!(!requests[1].contains("data:image/jpeg;base64"));
+        assert!(requests[1].contains("What position do you want to start with?"));
+    }
+
+    #[test]
     fn a_failed_love_rewrite_switches_to_the_next_provider() {
         let (first_url, first) = serve_sequence(vec![
             (
@@ -1756,8 +2194,8 @@ mod tests {
     fn i_want_is_always_typed_as_i_would_like() {
         for (draft, typed) in [
             (
-                "I want you to bury that cock deep inside me. What position do you want?",
-                "I would like you to bury that cock deep inside me. What position do you want?",
+                "I want you to bury that cock deep inside me. How do you want me to move on you?",
+                "I would like you to bury that cock deep inside me. How do you want me to move on you?",
             ),
             (
                 "Mmm, I really want to taste you. Is that what I want? Yes, I want.",
@@ -1804,6 +2242,8 @@ mod tests {
         assert!(text.contains(
             "if their bottom-most white bubble contains only text, never thank them for a photo"
         ));
+        assert!(text.contains("Small interface controls"));
+        assert!(text.contains("treat it as a text-only message"));
         assert!(text.contains("Do not refer to it as \"a huge code\""));
         assert!(text.contains("do not explicitly call it a \"dick pic\""));
         assert!(text.contains("Thank you for sharing that hot pic with me"));
