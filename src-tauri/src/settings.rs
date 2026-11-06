@@ -407,6 +407,30 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: draft_reply_shortcut.to_string(),
         },
     );
+    let draft_reply_hint_shortcut = "ctrl+shift+h";
+    bindings.insert(
+        "draft_reply_hint".to_string(),
+        ShortcutBinding {
+            id: "draft_reply_hint".to_string(),
+            name: "Draft reply with voice hint".to_string(),
+            description:
+                "Hold to speak a voice guidance hint, then release to draft a customized reply."
+                    .to_string(),
+            default_binding: draft_reply_hint_shortcut.to_string(),
+            current_binding: draft_reply_hint_shortcut.to_string(),
+        },
+    );
+    let regenerate_reply_shortcut = "ctrl+shift+r";
+    bindings.insert(
+        "regenerate_reply".to_string(),
+        ShortcutBinding {
+            id: "regenerate_reply".to_string(),
+            name: "Regenerate reply".to_string(),
+            description: "Erases the last typed reply and drafts a fresh alternative.".to_string(),
+            default_binding: regenerate_reply_shortcut.to_string(),
+            current_binding: regenerate_reply_shortcut.to_string(),
+        },
+    );
     let watch_chat_shortcut = "ctrl+shift+w";
     bindings.insert(
         "watch_chat".to_string(),

@@ -294,6 +294,16 @@ function App() {
                       grouped={true}
                     />
                     <ShortcutInput
+                      shortcutId="draft_reply_hint"
+                      descriptionMode="inline"
+                      grouped={true}
+                    />
+                    <ShortcutInput
+                      shortcutId="regenerate_reply"
+                      descriptionMode="inline"
+                      grouped={true}
+                    />
+                    <ShortcutInput
                       shortcutId="watch_chat"
                       descriptionMode="inline"
                       grouped={true}

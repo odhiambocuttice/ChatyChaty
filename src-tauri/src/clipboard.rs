@@ -1,11 +1,24 @@
 use crate::input::{self, EnigoState};
 use enigo::{Enigo, Keyboard};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Mutex, PoisonError};
 use tauri::{AppHandle, Manager};
 
 /// Serializes typing: two transcripts typed at once would interleave their
 /// characters. Only taken by `paste`, which never runs on the main thread.
 static PASTE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Length of the last text typed by Handy, so an undo or regenerate shortcut
+/// can backspace it away.
+static LAST_TYPED_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+pub fn set_last_typed_count(count: usize) {
+    LAST_TYPED_COUNT.store(count, Ordering::SeqCst);
+}
+
+pub fn get_last_typed_count() -> usize {
+    LAST_TYPED_COUNT.load(Ordering::SeqCst)
+}
 
 /// Runs `f` with the shared Enigo on the main thread (macOS TIS APIs require it)
 /// and waits for the result. Runs inline if already on the main thread, so no deadlock.
@@ -95,5 +108,40 @@ fn paste_direct(text: &str, app_handle: &AppHandle) -> Result<(), String> {
 /// injection hops via `with_enigo`).
 pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    paste_direct(&text, &app_handle)
+    let count = text.chars().count();
+    let res = paste_direct(&text, &app_handle);
+    if res.is_ok() {
+        set_last_typed_count(count);
+    }
+    res
+}
+
+/// Backspaces the characters typed by the last `paste` operation.
+///
+/// Returns the number of characters erased.
+pub fn erase_last_typed(app_handle: &AppHandle) -> Result<usize, String> {
+    let count = get_last_typed_count();
+    if count == 0 {
+        return Ok(0);
+    }
+    let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    let front_app = with_enigo(app_handle, |_| Ok(front_app_pid()))?;
+    input::backspace_keystrokes(
+        |stroke| {
+            with_enigo(app_handle, move |enigo| {
+                if front_app_pid() != front_app {
+                    return Err("another app came to the front, so erasing stopped".to_string());
+                }
+                match stroke {
+                    input::Stroke::Key(key, direction) => enigo.key(key, direction),
+                    input::Stroke::Text(character) => enigo.text(&character.to_string()),
+                }
+                .map_err(|e| format!("{}", e))
+            })
+        },
+        count,
+        2,
+    )?;
+    set_last_typed_count(0);
+    Ok(count)
 }

@@ -149,6 +149,25 @@ where
     Ok(())
 }
 
+/// Types Backspace key events to erase `count` characters.
+pub fn backspace_keystrokes<F>(
+    mut send_key: F,
+    count: usize,
+    key_delay_ms: u64,
+) -> Result<(), String>
+where
+    F: FnMut(Stroke) -> Result<(), String>,
+{
+    let click = |key| Stroke::Key(key, Direction::Click);
+    for i in 0..count {
+        if i > 0 && key_delay_ms > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(key_delay_ms));
+        }
+        send_key(click(Key::Backspace)).map_err(|e| format!("Failed to backspace: {}", e))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,5 +448,15 @@ mod tests {
             text.chars().count(),
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn backspacing_sends_exact_number_of_backspace_keys() {
+        let mut kb = RecordingKeyboard::default();
+        backspace_keystrokes(|s| kb.send(s), 5, 0).unwrap();
+        assert_eq!(kb.events.len(), 5);
+        for event in kb.events {
+            assert_eq!(event, (Key::Backspace, Direction::Click));
+        }
     }
 }

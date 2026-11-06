@@ -22,9 +22,9 @@ Code: [`src-tauri/src/reply.rs`](../src-tauri/src/reply.rs)
 | #   | Feature                      | What it does                                                                                                                            | Size | Status |
 | --- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------ |
 | 1   | Tone presets                 | Friendly, formal, short, decline politely. Each preset is its own shortcut or a quick picker, instead of editing the prompt.            | S    | 💡     |
-| 2   | Speak a hint before drafting | Hold the reply shortcut and say what you want ("say yes but suggest Friday"). The transcript goes into the prompt as the user's intent. | M    | 💡     |
+| 2   | Speak a hint before drafting | Hold the reply shortcut and say what you want ("say yes but suggest Friday"). The transcript goes into the prompt as the user's intent. | M    | ✅     |
 | 3   | Preview before typing        | Show the draft in the overlay. Enter types it, Esc throws it away. Stops a bad draft being typed into the chat box.                     | M    | 💡     |
-| 4   | Regenerate shortcut          | Delete the draft that was just typed and type a new one.                                                                                | S    | 💡     |
+| 4   | Regenerate shortcut          | Delete the draft that was just typed and type a new one.                                                                                | S    | ✅     |
 | 5   | Local reply model            | An optional Ollama or LM Studio endpoint, added as another OpenAI-compatible entry in `PROVIDERS`. Private, and no free-tier limits.    | S    | 💡     |
 
 ### Notes

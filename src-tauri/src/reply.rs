@@ -24,6 +24,31 @@ const GROQ_MAX_REPLY_TOKENS: u32 = 800;
 const OPENROUTER_MAX_REPLY_TOKENS: u32 = 4096;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Details of the most recently drafted reply, allowing instant regeneration / re-rolling
+/// without repeating previous suggestions or losing voice hint context.
+#[derive(Clone, Debug)]
+pub struct LastDraftInfo {
+    pub jpeg_bytes: Option<Vec<u8>>,
+    pub reply: String,
+    pub hint: Option<String>,
+}
+
+static LAST_DRAFT_INFO: std::sync::Mutex<Option<LastDraftInfo>> = std::sync::Mutex::new(None);
+
+pub fn record_last_draft(reply: &str, jpeg_bytes: Option<Vec<u8>>, hint: Option<&str>) {
+    if let Ok(mut guard) = LAST_DRAFT_INFO.lock() {
+        *guard = Some(LastDraftInfo {
+            jpeg_bytes,
+            reply: reply.to_string(),
+            hint: hint.map(|s| s.to_string()),
+        });
+    }
+}
+
+pub fn get_last_draft() -> Option<LastDraftInfo> {
+    LAST_DRAFT_INFO.lock().ok().and_then(|guard| guard.clone())
+}
+
 /// The longest side of the screenshot sent to the model. A full Retina capture
 /// is several MB; this keeps chat text readable at a fraction of the size.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -388,13 +413,38 @@ fn instructions() -> String {
     )
 }
 
-/// The chat completions request body for one screenshot.
-fn build_request(
+/// The chat completions request body for one screenshot, with optional operator guidance (hint)
+/// and previous draft avoidance (avoid).
+fn build_request_with_options(
     model: &str,
     max_tokens: u32,
     reasoning_effort: Option<&str>,
     jpeg_base64: &str,
+    hint: Option<&str>,
+    avoid: Option<&str>,
 ) -> Value {
+    let mut prompt = String::from(
+        "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. Note that small grey report triangle icons (▲), emojis, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (even if there is a tiny grey report icon beside it), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture' or 'Thank you for sharing that photo', and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), open by thanking them for sharing the photo and complimenting it (complimenting his huge, big or hot dick/cock explicitly by name whenever a man sends a blurred photo in an already sexually explicit chat with no non-sexual banner). Never answer the user's own question (if the client echoes your question, like 'Do you mind. It's a must', react to their answer rather than saying 'I don't mind'). Never introduce unprompted extreme kinks (such as golden showers). Never repeat messages, questions, or topics: look at all earlier messages on screen and do NOT re-ask any question that was already asked or answered earlier in the chat (for example, if positions, treats or preferences were already asked or chosen, do NOT ask about them again). NEVER use the generic signature question 'Which/what position do you want to start with?'. Always spice up the closing CTA (closing question) to match the immediate scene: ask a tempting, situation-specific question about his hands (e.g. 'Where are your hands while I'm doing that to you?'), touch and control ('Are you going to grab my hips, or let me take full control?'), pacing ('Do you want me slow and deep or wild and fast?'), stamina ('How long do you think you can last?'), or what happens next ('What are you going to do to me once you've tasted every drop?'). React directly to their latest words and advance the conversation forward with fresh details and a spicy closing CTA. If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. If that bottom-most white bubble says goodbye, threatens to leave, complains that the user only wants to sext, or asks for the user's name or location, respond to that first and directly: give the user's first name and city from the user's 'you are' profile card or earlier coloured bubbles if shown (never invent them), say warmly that you enjoy talking with them and want to get to know them, and end with an easy, tempting question that keeps them chatting. If the other side has been giving short one-line answers on the same topic, react briefly and switch to a fresh subject. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them."
+    );
+
+    if let Some(h) = hint {
+        let trimmed = h.trim();
+        if !trimmed.is_empty() {
+            prompt.push_str(&format!(
+                "\n\nOPERATOR GUIDANCE / VOICE HINT:\nThe operator explicitly instructed this direction for the reply: \"{trimmed}\". Incorporate this guidance, tone, or topic directly into the reply while keeping all other rules."
+            ));
+        }
+    }
+
+    if let Some(a) = avoid {
+        let trimmed = a.trim();
+        if !trimmed.is_empty() {
+            prompt.push_str(&format!(
+                "\n\nDO NOT REPEAT PREVIOUS DRAFT:\nA previous draft was generated and rejected: \"{trimmed}\". Do NOT repeat this phrasing, structure, or closing question. Provide a distinctly fresh and different reply."
+            ));
+        }
+    }
+
     let mut body = json!({
         "model": model,
         "max_tokens": max_tokens,
@@ -411,7 +461,7 @@ fn build_request(
                     // love to hear more" in 3 of 10 live replies; here, 0 of 10.
                     {
                         "type": "text",
-                        "text": "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. Note that small grey report triangle icons (▲), emojis, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (even if there is a tiny grey report icon beside it), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture' or 'Thank you for sharing that photo', and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), open by thanking them for sharing the photo and complimenting it (complimenting his huge, big or hot dick/cock explicitly by name whenever a man sends a blurred photo in an already sexually explicit chat with no non-sexual banner). Never answer the user's own question (if the client echoes your question, like 'Do you mind. It's a must', react to their answer rather than saying 'I don't mind'). Never introduce unprompted extreme kinks (such as golden showers). Never repeat messages, questions, or topics: look at all earlier messages on screen and do NOT re-ask any question that was already asked or answered earlier in the chat (for example, if positions, treats or preferences were already asked or chosen, do NOT ask about them again). NEVER use the generic signature question 'Which/what position do you want to start with?'. Always spice up the closing CTA (closing question) to match the immediate scene: ask a tempting, situation-specific question about his hands (e.g. 'Where are your hands while I'm doing that to you?'), touch and control ('Are you going to grab my hips, or let me take full control?'), pacing ('Do you want me slow and deep or wild and fast?'), stamina ('How long do you think you can last?'), or what happens next ('What are you going to do to me once you've tasted every drop?'). React directly to their latest words and advance the conversation forward with fresh details and a spicy closing CTA. If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. If that bottom-most white bubble says goodbye, threatens to leave, complains that the user only wants to sext, or asks for the user's name or location, respond to that first and directly: give the user's first name and city from the user's 'you are' profile card or earlier coloured bubbles if shown (never invent them), say warmly that you enjoy talking with them and want to get to know them, and end with an easy, tempting question that keeps them chatting. If the other side has been giving short one-line answers on the same topic, react briefly and switch to a fresh subject. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them."
+                        "text": prompt
                     }
                 ]
             }
@@ -421,6 +471,17 @@ fn build_request(
         body["reasoning_effort"] = json!(effort);
     }
     body
+}
+
+#[cfg(test)]
+/// The chat completions request body for one screenshot.
+fn build_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    jpeg_base64: &str,
+) -> Value {
+    build_request_with_options(model, max_tokens, reasoning_effort, jpeg_base64, None, None)
 }
 
 /// Asks the same provider to replace "love" (and words built from it) in a
@@ -974,12 +1035,20 @@ struct Attempt<'a> {
 
 /// Drafts with one provider; if the only fault is the forbidden word "love",
 /// asks the same provider once to rewrite its draft before falling back.
-fn try_attempt(attempt: &Attempt, key: &str, jpeg_base64: &str) -> Result<String, String> {
-    let body = build_request(
+fn try_attempt_with_options(
+    attempt: &Attempt,
+    key: &str,
+    jpeg_base64: &str,
+    hint: Option<&str>,
+    avoid: Option<&str>,
+) -> Result<String, String> {
+    let body = build_request_with_options(
         attempt.model,
         attempt.max_tokens,
         attempt.reasoning_effort,
         jpeg_base64,
+        hint,
+        avoid,
     );
     match request_reply(attempt.url, key, &body) {
         Err(e) => {
@@ -1043,14 +1112,19 @@ fn try_attempt(attempt: &Attempt, key: &str, jpeg_base64: &str) -> Result<String
 
 /// Tries each provider in order and returns the first reply. Fails only when
 /// all of them fail, with each one's reason.
-fn draft_with_fallback(attempts: &[Attempt], jpeg_base64: &str) -> Result<String, String> {
+fn draft_with_fallback_options(
+    attempts: &[Attempt],
+    jpeg_base64: &str,
+    hint: Option<&str>,
+    avoid: Option<&str>,
+) -> Result<String, String> {
     let mut failures = Vec::new();
     for attempt in attempts {
         let Some(key) = &attempt.key else {
             failures.push(format!("{}: no key saved", attempt.name));
             continue;
         };
-        match try_attempt(attempt, key, jpeg_base64) {
+        match try_attempt_with_options(attempt, key, jpeg_base64, hint, avoid) {
             Ok(reply) => {
                 info!("Drafted the reply with {}", attempt.name);
                 return Ok(reply);
@@ -1120,7 +1194,7 @@ pub fn save_provider_key(name: &str, key: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
+pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
     let path = std::env::temp_dir().join(format!("handy-reply-{}.jpg", std::process::id()));
     let result = (|| {
         // -x: no shutter sound. Captures the main display.
@@ -1157,7 +1231,7 @@ fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
 /// Copies the main display with GDI. Chatelle is DPI aware, so the screen size
 /// is in real pixels and the copy is not blurred.
 #[cfg(target_os = "windows")]
-fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
+pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
     use windows::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
         GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
@@ -1238,12 +1312,16 @@ fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
+pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
     Err("Reply drafting reads the screen and is only available on macOS and Windows".to_string())
 }
 
-/// Drafts a reply from provided JPEG bytes.
-pub fn draft_reply_from_jpeg(jpeg: &[u8]) -> Result<String, String> {
+/// Drafts a reply from provided JPEG bytes with optional voice hint and avoidance of previous draft.
+pub fn draft_reply_from_jpeg_with_options(
+    jpeg: &[u8],
+    hint: Option<&str>,
+    avoid: Option<&str>,
+) -> Result<String, String> {
     let attempts: Vec<Attempt> = PROVIDERS
         .iter()
         .map(|p| Attempt {
@@ -1260,16 +1338,33 @@ pub fn draft_reply_from_jpeg(jpeg: &[u8]) -> Result<String, String> {
             "No provider key saved. Add one in Settings under Draft reply keys.".to_string(),
         );
     }
-    draft_with_fallback(
+    let reply = draft_with_fallback_options(
         &attempts,
         &base64::engine::general_purpose::STANDARD.encode(jpeg),
-    )
+        hint,
+        avoid,
+    )?;
+    record_last_draft(&reply, Some(jpeg.to_vec()), hint);
+    Ok(reply)
+}
+
+/// Drafts a reply from provided JPEG bytes.
+pub fn draft_reply_from_jpeg(jpeg: &[u8]) -> Result<String, String> {
+    draft_reply_from_jpeg_with_options(jpeg, None, None)
+}
+
+/// Reads the chat on screen and returns the reply to type, taking optional voice hint and draft avoidance.
+pub fn draft_reply_from_screen_with_options(
+    hint: Option<&str>,
+    avoid: Option<&str>,
+) -> Result<String, String> {
+    let jpeg = capture_screen_jpeg()?;
+    draft_reply_from_jpeg_with_options(&jpeg, hint, avoid)
 }
 
 /// Reads the chat on screen and returns the reply to type.
 pub fn draft_reply_from_screen() -> Result<String, String> {
-    let jpeg = capture_screen_jpeg()?;
-    draft_reply_from_jpeg(&jpeg)
+    draft_reply_from_screen_with_options(None, None)
 }
 
 #[cfg(test)]
@@ -1289,6 +1384,23 @@ mod tests {
 
         let with_effort = build_request("some-model", 800, Some("low"), "AAAA");
         assert_eq!(with_effort["reasoning_effort"], "low");
+    }
+
+    #[test]
+    fn request_with_hint_and_avoid_includes_operator_guidance() {
+        let body = build_request_with_options(
+            "test-model",
+            1000,
+            None,
+            "AAAA",
+            Some("be playful and mention dessert"),
+            Some("I love tiramisu!"),
+        );
+        let prompt = body["messages"][1]["content"][1]["text"].as_str().unwrap();
+        assert!(prompt.contains("OPERATOR GUIDANCE / VOICE HINT"));
+        assert!(prompt.contains("be playful and mention dessert"));
+        assert!(prompt.contains("DO NOT REPEAT PREVIOUS DRAFT"));
+        assert!(prompt.contains("I love tiramisu!"));
     }
 
     #[test]

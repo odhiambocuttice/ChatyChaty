@@ -27,6 +27,14 @@
             "name": "Draft Reply",
             "description": "Reads the chat on screen and types a reply into the focused input."
           },
+          "draft_reply_hint": {
+            "name": "Draft Reply with Voice Hint",
+            "description": "Hold to speak a voice guidance hint, then release to draft a customized reply."
+          },
+          "regenerate_reply": {
+            "name": "Regenerate Reply",
+            "description": "Erases the last typed reply and drafts a fresh alternative."
+          },
           "watch_chat": {
             "name": "Watch Chat",
             "description": "Watches the open chat and notifies your Telegram when a new message arrives."
