@@ -33,10 +33,15 @@ pub struct PendingReply {
 static WATCHING: AtomicBool = AtomicBool::new(false);
 static CURRENT_WINDOW: Mutex<Option<WatchedWindow>> = Mutex::new(None);
 static PENDING_REPLY: Mutex<Option<PendingReply>> = Mutex::new(None);
+static BASELINE_OVERRIDE: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 static CAFFEINATE_CHILD: Mutex<Option<std::process::Child>> = Mutex::new(None);
 
 pub fn is_watching() -> bool {
     WATCHING.load(Ordering::SeqCst)
+}
+
+pub fn clear_pending_reply() {
+    *PENDING_REPLY.lock().unwrap() = None;
 }
 
 pub fn watched_info() -> String {
@@ -448,6 +453,11 @@ fn run_watch_loop(app: AppHandle, win_id: u32) {
             break;
         }
 
+        // If a new baseline was set (e.g. after sending a reply), adopt it
+        if let Some(new_baseline) = BASELINE_OVERRIDE.lock().unwrap().take() {
+            last_capture_bytes = new_baseline;
+        }
+
         let current_bytes = match capture_window_jpeg(win_id) {
             Ok(b) => b,
             Err(e) => {
@@ -572,12 +582,8 @@ fn notify_telegram_text(app: &AppHandle, text: &str) {
 
 /// Types and sends the pending reply into the watched chat window.
 pub fn send_pending_reply(app: AppHandle, message_id: i64) -> Result<(), String> {
-    let pending = {
-        let guard = PENDING_REPLY.lock().unwrap();
-        guard.clone()
-    };
-
-    let Some(reply) = pending else {
+    // Atomically take the pending reply to guarantee one-time execution and prevent double-send races
+    let Some(reply) = PENDING_REPLY.lock().unwrap().take() else {
         return Err("No pending reply to send.".to_string());
     };
 
@@ -634,6 +640,16 @@ pub fn send_pending_reply(app: AppHandle, message_id: i64) -> Result<(), String>
         let _ = enigo.key(Key::Return, Direction::Click);
     }
 
+    // Allow UI to render the sent message bubble
+    std::thread::sleep(Duration::from_millis(1200));
+
+    // Capture confirmation screenshot and update watcher baseline
+    // so the newly typed message bubble isn't detected as an incoming message
+    let conf_jpeg = capture_window_jpeg(win.window_id).ok();
+    if let Some(ref jpeg) = conf_jpeg {
+        *BASELINE_OVERRIDE.lock().unwrap() = Some(jpeg.clone());
+    }
+
     // Update Telegram message to confirmed
     let state = app.state::<Arc<crate::telegram::TelegramState>>();
     let token = {
@@ -651,8 +667,7 @@ pub fn send_pending_reply(app: AppHandle, message_id: i64) -> Result<(), String>
         );
 
         // Send confirmation screenshot
-        std::thread::sleep(Duration::from_millis(1500));
-        if let Ok(jpeg) = capture_window_jpeg(win.window_id) {
+        if let Some(jpeg) = conf_jpeg {
             let _ = crate::telegram::send_photo(&tok, cid, &jpeg, Some("Sent confirmation"), None);
         }
     }

@@ -122,9 +122,24 @@ pub fn send_message(
 
     let mut resp = ureq_agent()
         .post(&url)
-        .send_json(body)
+        .send_json(body.clone())
         .map_err(|e| format!("Failed to send message: {e}"))?;
-    let json: Value = resp.body_mut().read_json().map_err(|e| e.to_string())?;
+    let mut json: Value = resp.body_mut().read_json().map_err(|e| e.to_string())?;
+
+    // If Markdown parsing fails (e.g. unescaped entities in drafted text), retry as plain text
+    if json["ok"].as_bool() != Some(true) {
+        if let Some(obj) = body.as_object_mut() {
+            obj.remove("parse_mode");
+        }
+        if let Ok(mut retry_resp) = ureq_agent().post(&url).send_json(body) {
+            if let Ok(retry_json) = retry_resp.body_mut().read_json::<Value>() {
+                if retry_json["ok"].as_bool() == Some(true) {
+                    json = retry_json;
+                }
+            }
+        }
+    }
+
     if json["ok"].as_bool() != Some(true) {
         return Err(json["description"]
             .as_str()
@@ -156,9 +171,24 @@ pub fn edit_message_text(
 
     let mut resp = ureq_agent()
         .post(&url)
-        .send_json(body)
+        .send_json(body.clone())
         .map_err(|e| format!("Failed to edit message: {e}"))?;
-    let json: Value = resp.body_mut().read_json().map_err(|e| e.to_string())?;
+    let mut json: Value = resp.body_mut().read_json().map_err(|e| e.to_string())?;
+
+    // If Markdown parsing fails, retry as plain text
+    if json["ok"].as_bool() != Some(true) {
+        if let Some(obj) = body.as_object_mut() {
+            obj.remove("parse_mode");
+        }
+        if let Ok(mut retry_resp) = ureq_agent().post(&url).send_json(body) {
+            if let Ok(retry_json) = retry_resp.body_mut().read_json::<Value>() {
+                if retry_json["ok"].as_bool() == Some(true) {
+                    json = retry_json;
+                }
+            }
+        }
+    }
+
     if json["ok"].as_bool() != Some(true) {
         return Err(json["description"]
             .as_str()
@@ -408,6 +438,7 @@ fn handle_update(app: &AppHandle, token: &str, state: &TelegramState, update: &V
             }
             "ignore" => {
                 let _ = answer_callback_query(token, query_id, Some("Ignored"));
+                crate::watch::clear_pending_reply();
                 let _ = edit_message_text(token, chat_id, message_id, "⚪ _Message ignored_", None);
             }
             "send" => {
