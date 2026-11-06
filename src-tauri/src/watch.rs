@@ -255,7 +255,8 @@ pub fn capture_window_jpeg(window_id: u32) -> Result<Vec<u8>, String> {
         GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
         SRCCOPY,
     };
-    use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, PrintWindow, PRINT_WINDOW_FLAGS};
+    use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
     let hwnd = HWND(window_id as usize as *mut _);
     let mut rect = RECT::default();
