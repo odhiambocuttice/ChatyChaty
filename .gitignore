@@ -42,6 +42,7 @@ blob-report/
 
 # Nix build output
 result
+dist-installers/
 
 # Python bytecode (scripts/)
 __pycache__/
