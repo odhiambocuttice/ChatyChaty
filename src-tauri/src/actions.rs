@@ -485,6 +485,16 @@ impl ShortcutAction for CancelAction {
 // Draft Reply Action
 struct DraftReplyAction;
 
+fn restore_overlay_or_hide(app: &AppHandle) {
+    let settings = crate::settings::get_settings(app);
+    if settings.show_floating_dock && settings.overlay_style != crate::settings::OverlayStyle::None
+    {
+        crate::overlay::show_dock_overlay(app);
+    } else {
+        utils::hide_recording_overlay(app);
+    }
+}
+
 /// True while a reply is being drafted, so a second press does not start a second request.
 static DRAFTING: AtomicBool = AtomicBool::new(false);
 static DRAFT_CANCEL_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -536,12 +546,15 @@ impl ShortcutAction for DraftReplyAction {
                         return;
                     }
 
+                    if let Some(coords) = crate::reply::get_last_input_box() {
+                        crate::input::focus_input_box(&app_clone, coords);
+                    }
                     if let Err(e) = crate::clipboard::paste(reply, app_clone.clone()) {
                         error!("Failed to type the drafted reply: {e}");
                         let _ = app_clone.emit("draft-reply-error", e.to_string());
                     }
                     if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
-                        utils::hide_recording_overlay(&app_clone);
+                        restore_overlay_or_hide(&app_clone);
                         set_tray_state(&app_clone, TrayIconState::Idle);
                     }
                 }
@@ -698,12 +711,15 @@ impl ShortcutAction for DraftReplyWithHintAction {
 
             match result {
                 Ok(reply) => {
+                    if let Some(coords) = crate::reply::get_last_input_box() {
+                        crate::input::focus_input_box(&ah, coords);
+                    }
                     if let Err(e) = crate::clipboard::paste(reply, ah.clone()) {
                         error!("Failed to type hint-drafted reply: {e}");
                         let _ = ah.emit("draft-reply-error", e.to_string());
                     }
                     if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
-                        utils::hide_recording_overlay(&ah);
+                        restore_overlay_or_hide(&ah);
                         set_tray_state(&ah, TrayIconState::Idle);
                     }
                 }
@@ -773,12 +789,15 @@ impl ShortcutAction for RegenerateReplyAction {
                         return;
                     }
 
+                    if let Some(coords) = crate::reply::get_last_input_box() {
+                        crate::input::focus_input_box(&app_clone, coords);
+                    }
                     if let Err(e) = crate::clipboard::paste(reply, app_clone.clone()) {
                         error!("Failed to type regenerated reply: {e}");
                         let _ = app_clone.emit("draft-reply-error", e.to_string());
                     }
                     if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
-                        utils::hide_recording_overlay(&app_clone);
+                        restore_overlay_or_hide(&app_clone);
                         set_tray_state(&app_clone, TrayIconState::Idle);
                     }
                 }
@@ -852,6 +871,51 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     );
     map
 });
+
+pub fn trigger_draft_reply(app: &AppHandle) {
+    if let Some(action) = ACTION_MAP.get("draft_reply") {
+        action.start(app, "draft_reply", "");
+    }
+}
+
+pub fn trigger_draft_reply_hint_start(app: &AppHandle) {
+    if let Some(action) = ACTION_MAP.get("draft_reply_hint") {
+        action.start(app, "draft_reply_hint", "");
+    }
+}
+
+pub fn trigger_draft_reply_hint_stop(app: &AppHandle) {
+    if let Some(action) = ACTION_MAP.get("draft_reply_hint") {
+        action.stop(app, "draft_reply_hint", "");
+    }
+}
+
+pub fn trigger_regenerate_reply(app: &AppHandle) {
+    if let Some(action) = ACTION_MAP.get("regenerate_reply") {
+        action.start(app, "regenerate_reply", "");
+    }
+}
+
+pub fn trigger_transcribe_start(app: &AppHandle) {
+    if let Some(action) = ACTION_MAP.get("transcribe") {
+        action.start(app, "transcribe", "");
+    }
+}
+
+pub fn trigger_transcribe_stop(app: &AppHandle) {
+    if let Some(action) = ACTION_MAP.get("transcribe") {
+        action.stop(app, "transcribe", "");
+    }
+}
+
+pub fn trigger_transcribe_toggle(app: &AppHandle) {
+    let rm = app.state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+    if rm.is_recording() {
+        trigger_transcribe_stop(app);
+    } else {
+        trigger_transcribe_start(app);
+    }
+}
 
 #[cfg(test)]
 mod tests {

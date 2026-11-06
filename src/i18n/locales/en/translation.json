@@ -90,7 +90,9 @@
           "description": "Where the overlay appears on screen during recording and transcription.",
           "options": {
             "bottom": "Bottom",
-            "top": "Top"
+            "top": "Top",
+            "left": "Left",
+            "right": "Right"
           }
         }
       }
@@ -144,6 +146,7 @@
       "logs": "Logs"
     },
     "groups": {
+      "quickActions": "Quick Actions",
       "keyboardShortcuts": "Keyboard shortcuts",
       "input": "Input",
       "recording": "Recording",
@@ -152,6 +155,27 @@
       "speechModel": "Speech model",
       "modelStatus": "Status",
       "log": "Log"
+    },
+    "floatingDock": {
+      "title": "Floating Action Dock",
+      "description": "Show an always-on-top floating toolbar with 1-click buttons for Draft, Hint, Re-roll, and Dictate over your apps."
+    },
+    "autoFocusInput": {
+      "title": "Auto-Focus Chat Input",
+      "description": "Automatically detect and click the chat message field so you don't need to move your mouse before drafting."
+    },
+    "quickActions": {
+      "title": "One-Click Actions",
+      "draft": "Draft Reply",
+      "draftDesc": "Reads screen & types reply",
+      "hint": "Voice Hint",
+      "hintDesc": "Speak guidance to steer draft",
+      "reroll": "Re-roll Reply",
+      "rerollDesc": "Erases draft & writes new",
+      "dictate": "Dictate Voice",
+      "dictateDesc": "Transcribes what you speak",
+      "watch": "Watch Chat",
+      "watchDesc": "Alerts Telegram on message"
     },
     "speechModel": {
       "liveDetails": "{{size}} MB · Types as you speak",
@@ -195,7 +219,25 @@
   "overlay": {
     "transcribing": "Transcribing...",
     "loadingModel": "Loading model...",
-    "drafting": "Drafting reply..."
+    "drafting": "Drafting reply...",
+    "hinting": "Speaking hint...",
+    "done": "Done",
+    "dock": {
+      "draft": "Draft",
+      "draftTooltip": "Draft reply to chat on screen",
+      "hint": "Hint",
+      "hintTooltip": "Speak a voice hint for the reply",
+      "reroll": "Re-roll",
+      "rerollTooltip": "Erase previous reply and draft an alternative",
+      "dictate": "Dictate",
+      "dictateTooltip": "Transcribe your voice into text",
+      "watch": "Watch",
+      "watching": "Watching",
+      "watchTooltip": "Watch chat and alert Telegram",
+      "collapse": "Collapse",
+      "expand": "Show Action Dock",
+      "hide": "Close dock"
+    }
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",

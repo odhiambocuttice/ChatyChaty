@@ -52,6 +52,14 @@
 .ov-stage.top {
   align-items: flex-start; /* top placement: flush to the top edge */
 }
+.ov-stage.left {
+  justify-content: flex-start;
+  align-items: center;
+}
+.ov-stage.right {
+  justify-content: flex-end;
+  align-items: center;
+}
 
 /* Compact pill: fade the whole container in/out (the pill itself never pops or
    morphs). */
@@ -156,6 +164,156 @@
 }
 .scard.compact.cworking {
   width: var(--ov-work-w);
+}
+
+/* Floating Action Dock */
+.scard.dock {
+  animation: none;
+  width: min(440px, calc(100vw - 16px));
+  border-radius: 24px;
+  padding: 4px;
+}
+
+.sdock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  width: 100%;
+}
+
+.sdock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 5px 8px;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 140ms ease;
+  white-space: nowrap;
+}
+
+.sdock-btn:hover {
+  background: var(--color-wash, rgba(255, 255, 255, 0.08));
+  border-color: var(--s-border);
+}
+
+.sdock-btn:active {
+  transform: scale(0.96);
+}
+
+.sdock-btn-primary {
+  background: color-mix(in srgb, var(--color-logo-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-logo-primary) 30%, transparent);
+  color: var(--color-logo-primary);
+  font-weight: 600;
+}
+
+.sdock-btn-primary:hover {
+  background: color-mix(in srgb, var(--color-logo-primary) 22%, transparent);
+}
+
+.sdock-btn.active {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #22c55e;
+}
+
+.sdock-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.sdock-label {
+  line-height: 1;
+}
+
+.sdock-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  border-left: 1px solid var(--s-hair);
+  padding-left: 3px;
+}
+
+.sdock-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--s-muted);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.sdock-icon-btn:hover {
+  color: var(--color-text);
+  background: var(--color-wash, rgba(255, 255, 255, 0.08));
+}
+
+.sdock-collapsed {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 50% !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sdock-expand-btn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sdock-done-btn {
+  background: var(--color-logo-primary);
+  color: #fff;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  margin-right: 6px;
+}
+
+.sdot-pulse {
+  animation: pulse-dot 1s infinite alternate ease-in-out;
+}
+
+@keyframes pulse-dot {
+  from {
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.shint-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-logo-primary);
+  white-space: nowrap;
 }
 
 /* text region — auto-height open via grid-rows trick; region fades as a whole */

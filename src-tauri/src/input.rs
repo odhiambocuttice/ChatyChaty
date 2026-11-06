@@ -22,6 +22,52 @@ pub fn get_cursor_position(app_handle: &AppHandle) -> Option<(i32, i32)> {
     enigo.location().ok()
 }
 
+/// Returns the primary or active display size for mapping normalized coordinates to screen points/pixels.
+pub fn get_display_size(app_handle: &AppHandle) -> (f64, f64) {
+    if let Ok(Some(monitor)) = app_handle.primary_monitor() {
+        let scale = monitor.scale_factor();
+        #[cfg(target_os = "macos")]
+        return (
+            monitor.size().width as f64 / scale,
+            monitor.size().height as f64 / scale,
+        );
+        #[cfg(not(target_os = "macos"))]
+        return (monitor.size().width as f64, monitor.size().height as f64);
+    }
+    (1440.0, 900.0)
+}
+
+/// Automatically moves the mouse to the center of the detected chat input box,
+/// clicks to focus the field, and restores the mouse back to where it was.
+pub fn focus_input_box(app_handle: &AppHandle, coords: crate::reply::InputBoxCoords) {
+    let settings = crate::settings::get_settings(app_handle);
+    if !settings.auto_focus_input {
+        return;
+    }
+
+    let (norm_x, norm_y) = coords.center_normalized();
+    let (disp_w, disp_h) = get_display_size(app_handle);
+    let click_x = (norm_x * disp_w).round() as i32;
+    let click_y = (norm_y * disp_h).round() as i32;
+
+    log::info!(
+        "Auto-focusing chat input box at screen coords ({click_x}, {click_y}) [norm: ({norm_x:.3}, {norm_y:.3}), display: {disp_w}x{disp_h}]"
+    );
+
+    let _ = crate::clipboard::with_enigo(app_handle, move |enigo| {
+        use enigo::{Button, Coordinate, Direction};
+        let orig_pos = enigo.location().ok();
+        let _ = enigo.move_mouse(click_x, click_y, Coordinate::Abs);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let _ = enigo.button(Button::Left, Direction::Click);
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        if let Some((ox, oy)) = orig_pos {
+            let _ = enigo.move_mouse(ox, oy, Coordinate::Abs);
+        }
+        Ok(())
+    });
+}
+
 /// Spreads the gap around `base_ms` so the rhythm is uneven, the way a real
 /// keyboard is. Deterministic, so it needs no random number generator.
 fn jittered_delay_ms(base_ms: u64, index: usize) -> u64 {

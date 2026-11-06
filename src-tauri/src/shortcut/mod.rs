@@ -675,6 +675,8 @@ pub fn change_overlay_position_setting(app: AppHandle, position: String) -> Resu
         // onto Bottom rather than warn.
         "none" | "bottom" => OverlayPosition::Bottom,
         "top" => OverlayPosition::Top,
+        "left" => OverlayPosition::Left,
+        "right" => OverlayPosition::Right,
         other => {
             warn!("Invalid overlay position '{}', defaulting to bottom", other);
             OverlayPosition::Bottom
@@ -714,6 +716,29 @@ pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(),
     // Reposition in case the window needs to re-center for the new style.
     crate::utils::update_overlay_position(&app);
 
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_show_floating_dock_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.show_floating_dock = enabled;
+    settings::write_settings(&app, settings.clone());
+    if enabled && settings.overlay_style != OverlayStyle::None {
+        crate::overlay::show_dock_overlay(&app);
+    } else {
+        crate::overlay::force_hide_overlay(&app);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_auto_focus_input_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.auto_focus_input = enabled;
+    settings::write_settings(&app, settings);
     Ok(())
 }
 

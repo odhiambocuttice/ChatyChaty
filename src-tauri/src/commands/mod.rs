@@ -96,6 +96,57 @@ pub fn get_watch_status() -> Result<bool, String> {
     Ok(crate::watch::is_watching())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn trigger_draft_reply(app: AppHandle) -> Result<(), String> {
+    crate::actions::trigger_draft_reply(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn trigger_draft_reply_hint_start(app: AppHandle) -> Result<(), String> {
+    crate::actions::trigger_draft_reply_hint_start(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn trigger_draft_reply_hint_stop(app: AppHandle) -> Result<(), String> {
+    crate::actions::trigger_draft_reply_hint_stop(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn trigger_regenerate_reply(app: AppHandle) -> Result<(), String> {
+    crate::actions::trigger_regenerate_reply(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn trigger_transcribe_toggle(app: AppHandle) -> Result<(), String> {
+    crate::actions::trigger_transcribe_toggle(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn show_dock_overlay(app: AppHandle) -> Result<(), String> {
+    let _ = crate::shortcut::change_show_floating_dock_setting(app.clone(), true);
+    crate::overlay::show_dock_overlay(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn hide_dock_overlay(app: AppHandle) -> Result<(), String> {
+    let _ = crate::shortcut::change_show_floating_dock_setting(app.clone(), false);
+    crate::overlay::force_hide_overlay(&app);
+    Ok(())
+}
+
 /// The log file's text, for the Logs tab. Rotation keeps the file at 500 KB,
 /// so the whole file is small enough to show.
 #[tauri::command]

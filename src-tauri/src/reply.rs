@@ -24,6 +24,63 @@ const GROQ_MAX_REPLY_TOKENS: u32 = 800;
 const OPENROUTER_MAX_REPLY_TOKENS: u32 = 4096;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Normalized bounding box coordinates (0-1000 scale) of the chat input box detected on screen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InputBoxCoords {
+    pub ymin: f64,
+    pub xmin: f64,
+    pub ymax: f64,
+    pub xmax: f64,
+}
+
+impl InputBoxCoords {
+    pub fn center_normalized(&self) -> (f64, f64) {
+        let cx = (self.xmin + self.xmax) / 2.0 / 1000.0;
+        let cy = (self.ymin + self.ymax) / 2.0 / 1000.0;
+        (cx.clamp(0.0, 1.0), cy.clamp(0.0, 1.0))
+    }
+}
+
+static LAST_INPUT_BOX: std::sync::Mutex<Option<InputBoxCoords>> = std::sync::Mutex::new(None);
+
+pub fn get_last_input_box() -> Option<InputBoxCoords> {
+    LAST_INPUT_BOX.lock().ok().and_then(|guard| *guard)
+}
+
+pub fn set_last_input_box(coords: Option<InputBoxCoords>) {
+    if let Ok(mut guard) = LAST_INPUT_BOX.lock() {
+        *guard = coords;
+    }
+}
+
+/// Extracts `INPUT_BOX: [ymin, xmin, ymax, xmax]` from the model's output if present,
+/// returning the cleaned reply text along with optional coordinates.
+pub fn extract_input_box(text: &str) -> (String, Option<InputBoxCoords>) {
+    if let Some(idx) = text.rfind("INPUT_BOX:") {
+        let after = &text[idx + "INPUT_BOX:".len()..];
+        if let Some(start_bracket) = after.find('[') {
+            if let Some(end_bracket) = after[start_bracket..].find(']') {
+                let nums_str = &after[start_bracket + 1..start_bracket + end_bracket];
+                let nums: Vec<f64> = nums_str
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<f64>().ok())
+                    .collect();
+                if nums.len() == 4 {
+                    let cleaned = text[..idx].trim_end().to_string();
+                    let coords = InputBoxCoords {
+                        ymin: nums[0],
+                        xmin: nums[1],
+                        ymax: nums[2],
+                        xmax: nums[3],
+                    };
+                    return (cleaned, Some(coords));
+                }
+            }
+        }
+    }
+    (text.to_string(), None)
+}
+
 /// Details of the most recently drafted reply, allowing instant regeneration / re-rolling
 /// without repeating previous suggestions or losing voice hint context.
 #[derive(Clone, Debug)]
@@ -178,7 +235,9 @@ fn instructions() -> String {
            or \"Mind? Not at all\"), the other side is emphatically answering that it is a must \
            for them — NEVER misread it as a question directed back at the user, and NEVER answer \
            the user's own question (never say \"I do not mind at all\"). React passionately to their \
-           enthusiastic answer.\n\
+           enthusiastic answer (for example \"Hearing you say it's a must makes me so wet—there is \
+           nothing hotter than a man who wants to taste and swallow every single drop of me. Once you've \
+           licked me completely clean, what are you going to do to me next?\").\n\
          - Some screens show notes, logs or warning banners that only the user's team can \
            see, such as a yellow box, sidebars of timestamped customer log entries (labelled \
            for example UPDATES, OTHER, PERSONAL INFO, WORK, FAMILY or SEXUAL PREFERENCES under \
@@ -208,7 +267,12 @@ fn instructions() -> String {
            chat, keep the warmth alive by deflecting playfully and lightly — say that the thought \
            is tempting, that they are getting ahead of themselves, or that you really enjoy \
            taking your time and building a genuine connection and vibe first before even thinking \
-           about meeting, and steer into an engaging question about them. In an already sexually \
+           about meeting, and steer into an engaging question about them (for example: \"You definitely \
+           don't waste any time, do you? 😉 I like a man who knows what he wants, but slow down mister—I \
+           always take my time getting to know someone and seeing if our chemistry is real first. What kind \
+           of things do you usually enjoy doing on weekends?\" or \"Slow down mister, you haven't even \
+           taken me on a proper virtual date yet 😉 Let's see if you can keep up with me here first. What \
+           do you usually like to do to unwind?\"). In an already sexually \
            explicit chat, glide past the meetup logistics without promising to come over and pour \
            that heat straight into vivid physical desire and what you would do to each other, \
            ending with an engaging question. Distinguish an actual meetup request from longing \
@@ -297,13 +361,14 @@ fn instructions() -> String {
            for a photo and never claim they sent a photo, even if an earlier purple bubble had a \
            photo or their text mentions photos or body parts. Small UI icons, including the small \
            grey triangle report/flag button beside the text, are NOT photos. Whenever a bubble \
-           contains written conversation text (words, questions, sentences), treat it as a \
-           text-only message. Never open with \"Thank you for sharing that picture\" or \"Thank you \
-           for sharing that photo\" when the newest message contains text words and no actual \
-           large image attachment. Whenever the newest left-side white bubble from the other side \
-           contains a photo, always acknowledge the new photo in your very first sentence, thank \
-           them for sharing it, and compliment it nicely (for example \"Thank you for sharing \
-           that hot pic with me\"). Do not refer to it as \"a huge code\" and do not explicitly \
+           contains written conversation text (words, questions, sentences, such as talking about food, \
+           desserts, rolls, bodies, acts, or conversation), treat it as a text-only message: \
+           NEVER thank them for a photo, NEVER open with \"Thank you for sharing that picture\", \
+           \"Thank you for sending that hot pic\", or ANY mention of pictures, pics or photos! Opening \
+           with a photo thank-you when no photo was sent breaks trust and exposes you as a broken bot. \
+           Whenever the newest left-side white bubble from the other side contains a photo \
+           (and has no conversation text), always acknowledge the new photo in your very first sentence, thank them for sharing it, and \
+           compliment it nicely (for example \"Thank you for sharing that hot pic with me\"). Do not refer to it as \"a huge code\" and do not explicitly \
            call it a \"dick pic\": keep the compliment natural, appreciative, and hot or wholesome \
            to match the chat, answer any question in their message directly, and end with an \
            engaging question.\n\
@@ -409,7 +474,10 @@ fn instructions() -> String {
            promises. If the messages do not give enough to answer, ask one short question.\n\
          - Write plain text. Chat boxes show Markdown symbols as they are, so use no \
            asterisks, no headings and no bullet symbols.\n\
-         - Reply with the message text only. No greeting label, no quotes, no explanation."
+         - Reply with the message text only. No greeting label, no quotes, no explanation.\n\
+         - At the very end of your response, on a new line, output the normalized 0-1000 screen \
+           coordinates of the chat typing input box visible at the bottom of the conversation: \
+           INPUT_BOX: [ymin, xmin, ymax, xmax]."
     )
 }
 
@@ -424,7 +492,13 @@ fn build_request_with_options(
     avoid: Option<&str>,
 ) -> Value {
     let mut prompt = String::from(
-        "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. Note that small grey report triangle icons (▲), emojis, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (even if there is a tiny grey report icon beside it), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture' or 'Thank you for sharing that photo', and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), open by thanking them for sharing the photo and complimenting it (complimenting his huge, big or hot dick/cock explicitly by name whenever a man sends a blurred photo in an already sexually explicit chat with no non-sexual banner). Never answer the user's own question (if the client echoes your question, like 'Do you mind. It's a must', react to their answer rather than saying 'I don't mind'). Never introduce unprompted extreme kinks (such as golden showers). Never repeat messages, questions, or topics: look at all earlier messages on screen and do NOT re-ask any question that was already asked or answered earlier in the chat (for example, if positions, treats or preferences were already asked or chosen, do NOT ask about them again). NEVER use the generic signature question 'Which/what position do you want to start with?'. Always spice up the closing CTA (closing question) to match the immediate scene: ask a tempting, situation-specific question about his hands (e.g. 'Where are your hands while I'm doing that to you?'), touch and control ('Are you going to grab my hips, or let me take full control?'), pacing ('Do you want me slow and deep or wild and fast?'), stamina ('How long do you think you can last?'), or what happens next ('What are you going to do to me once you've tasted every drop?'). React directly to their latest words and advance the conversation forward with fresh details and a spicy closing CTA. If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. If that bottom-most white bubble says goodbye, threatens to leave, complains that the user only wants to sext, or asks for the user's name or location, respond to that first and directly: give the user's first name and city from the user's 'you are' profile card or earlier coloured bubbles if shown (never invent them), say warmly that you enjoy talking with them and want to get to know them, and end with an easy, tempting question that keeps them chatting. If the other side has been giving short one-line answers on the same topic, react briefly and switch to a fresh subject. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them."
+        "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. \
+         CRITICAL PHOTO RULE: The other side's messages are almost always pure text. Note that small grey report triangle icons (▲), emojis, avatars, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (talking about food, desserts, cinnamon rolls, bodies, acts, or conversation), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture', 'Thank you for sending that hot pic', or any variation of thanking for pictures, and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), acknowledge the photo. \
+         CRITICAL MEETUP RULE: If the other side brings up meeting in person or says you need to meet (e.g. 'we need to meet each other', 'can we meet', 'let's meet up'): NEVER say you cannot meet, NEVER say 'meeting in person is not something I do', NEVER say 'I don't meet in person', and NEVER say 'I prefer chatting right here' (this creates an immediate dead end). Don't suggest meeting, but don't say you can't meet! Deflect playfully and flirtatiously: tease that they are getting ahead of themselves, or say you love taking your time to get to know someone and build a real vibe first (e.g. 'You definitely don't waste any time, do you? 😉 I like that energy, but slow down mister—I always take my time getting to know someone and seeing if our chemistry is real first. What kind of things do you usually enjoy doing on weekends?'). \
+         Never answer the user's own question: if the client echoes your question words (like 'Do you mind. It's a must'), they are emphatically answering that it is an absolute must for them — NEVER say 'I don't mind' (that makes no sense because you asked them), react to their enthusiastic answer! Never introduce unprompted extreme kinks (such as golden showers). \
+         Never repeat messages, questions, or topics: look at all earlier messages on screen and do NOT re-ask any question that was already asked or answered earlier in the chat. If they already named a position or act (such as cowgirl, grinding, or oral), accept and build upon that exact choice with vivid dirty talk! \
+         NEVER use the generic signature question 'Which/what position do you want to start with?'. Always spice up the closing CTA (closing question) to match the immediate scene: ask a tempting, situation-specific question about his hands ('Where are your hands while I'm grinding on top of you?'), touch and control ('Are you going to grab my hips and hold me close, or let me take full control?'), pacing ('Do you want me slow and deep or wild and fast?'), stamina ('How long do you think you can last once you feel me around you?'), or what happens next ('What are you going to do to me once you've tasted every single drop?'). \
+         React directly to their latest words and advance the conversation forward with fresh details and a spicy closing CTA. If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. If that bottom-most white bubble says goodbye, threatens to leave, complains that the user only wants to sext, or asks for the user's name or location, respond to that first and directly: give the user's first name and city from the user's 'you are' profile card or earlier coloured bubbles if shown (never invent them), say warmly that you enjoy talking with them and want to get to know them, and end with an easy, tempting question that keeps them chatting. If the other side has been giving short one-line answers on the same topic, react briefly and switch to a fresh subject. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them. At the very end on a new line, output the normalized 0-1000 coordinates of the chat input box at the bottom: INPUT_BOX: [ymin, xmin, ymax, xmax]."
     );
 
     if let Some(h) = hint {
@@ -717,6 +791,11 @@ fn parse_reply(response: &Value) -> Result<String, String> {
     if text.eq_ignore_ascii_case("NO_CONVERSATION") {
         return Err("no conversation on screen".to_string());
     }
+    let (extracted_text, maybe_coords) = extract_input_box(text);
+    if let Some(coords) = maybe_coords {
+        set_last_input_box(Some(coords));
+    }
+    let text = extracted_text.trim();
     if has_mixed_script_glitch(text) {
         return Err(format!("the reply contained a mixed-script glitch: {text}"));
     }
@@ -743,7 +822,8 @@ fn parse_reply(response: &Value) -> Result<String, String> {
     if uses_the_word_love(text) {
         return Err(format!("the reply used the word love: {text}"));
     }
-    Ok(prefer_would_like(text))
+    let text = strip_phantom_photo_opener(text);
+    Ok(prefer_would_like(&text))
 }
 
 /// Phrases that appear when a model refuses the prompt instead of writing the
@@ -978,7 +1058,7 @@ fn has_unprompted_extreme_kink(text: &str) -> bool {
 /// Phrases that use the overused, generic start-position closing question.
 /// These read as an AI signature cliché rather than natural human texting,
 /// so they are never typed and are rewritten with a situational, spicy CTA.
-const CLICHE_POSITION_CTAS: [&str; 12] = [
+const CLICHE_POSITION_CTAS: [&str; 24] = [
     "position do you want to start with",
     "position would you like to start with",
     "position do you want to start",
@@ -991,13 +1071,184 @@ const CLICHE_POSITION_CTAS: [&str; 12] = [
     "which position do you like to start",
     "what position do you like to start",
     "which position do we start with",
+    "what position do we start with",
+    "which position should we start with",
+    "what position should we start with",
+    "which position would you like",
+    "what position would you like",
+    "which position do you like",
+    "what position do you like",
+    "which position do you prefer",
+    "what position do you prefer",
+    "which position do you want to try",
+    "what position do you want to try",
+    "which position do you want to do",
 ];
 
 fn has_cliche_position_cta(text: &str) -> bool {
     let lower = text.to_lowercase().replace(['\u{2019}', '’'], "'");
-    CLICHE_POSITION_CTAS
+    if CLICHE_POSITION_CTAS
         .iter()
         .any(|phrase| lower.contains(phrase))
+    {
+        return true;
+    }
+    lower.contains("position")
+        && (lower.contains("start with")
+            || lower.contains("to start")
+            || lower.contains("try first")
+            || lower.contains("do first"))
+}
+
+/// Strips hallucinated phantom photo thank-you greetings when prepended to a normal text reply.
+fn strip_phantom_photo_opener(text: &str) -> String {
+    let lower = text.to_lowercase();
+    const PHOTO_OPENERS: [&str; 26] = [
+        "thank you for sharing that nice picture with me.",
+        "thank you for sharing that nice picture with me,",
+        "thank you for sharing that hot pic with me.",
+        "thank you for sharing that hot pic with me,",
+        "thank you for sharing that hot picture with me.",
+        "thank you for sharing that hot picture with me,",
+        "thank you for sharing that picture with me.",
+        "thank you for sharing that picture with me,",
+        "thank you for sharing that photo with me.",
+        "thank you for sharing that photo with me,",
+        "thank you for sending that hot pic to me.",
+        "thank you for sending that hot pic to me,",
+        "thank you for sending that nice picture to me.",
+        "thank you for sending that nice picture to me,",
+        "thank you for sending that hot picture to me.",
+        "thank you for sending that hot picture to me,",
+        "thank you for sending that picture to me.",
+        "thank you for sending that picture to me,",
+        "thank you for sending that photo to me.",
+        "thank you for sending that photo to me,",
+        "thank you for the hot pic.",
+        "thank you for the nice picture.",
+        "thank you for the picture.",
+        "thank you for the photo.",
+        "thanks for sharing that picture.",
+        "thanks for sending that picture.",
+    ];
+    for opener in PHOTO_OPENERS {
+        if lower.starts_with(opener) {
+            let remainder = text[opener.len()..].trim_start();
+            if remainder.len() >= 30 && remainder.contains('?') {
+                return remainder.to_string();
+            }
+        }
+    }
+    text.to_string()
+}
+
+/// Replaces a generic position closing question with an enticing, scene-specific spicy CTA.
+fn replace_cliche_position_cta(text: &str) -> String {
+    let lower = text.to_lowercase().replace(['\u{2019}', '’'], "'");
+    if let Some(idx) = lower.rfind("position") {
+        let prefix = &text[..idx];
+        let start = prefix
+            .rfind(|c| c == '.' || c == '!' || c == '?' || c == ';')
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let kept = text[..start].trim_end();
+        let lower_kept = kept.to_lowercase();
+        let spicy_cta = if lower_kept.contains("ride")
+            || lower_kept.contains("cowgirl")
+            || lower_kept.contains("grind")
+            || lower_kept.contains("on top")
+        {
+            "Where are your hands going to be while I'm grinding on top of you?"
+        } else if lower_kept.contains("swallow")
+            || lower_kept.contains("taste")
+            || lower_kept.contains("lick")
+            || lower_kept.contains("juices")
+            || lower_kept.contains("tongue")
+        {
+            "What are you going to do to me once you've tasted every single drop?"
+        } else if lower_kept.contains("fuck")
+            || lower_kept.contains("slide")
+            || lower_kept.contains("cock")
+            || lower_kept.contains("dick")
+            || lower_kept.contains("inside")
+        {
+            "Do you want me to take you slow and deep, or drive you wild fast?"
+        } else {
+            "Where are your hands going to be while I'm doing that to you?"
+        };
+        if kept.is_empty() {
+            return spicy_cta.to_string();
+        } else {
+            return format!("{kept} {spicy_cta}");
+        }
+    }
+    text.to_string()
+}
+
+/// Sanitizes a cold, dead-end meetup refusal into a warm, playful deflection.
+fn sanitize_meet_refusal(text: &str) -> String {
+    let lower = text.to_lowercase().replace(['\u{2019}', '’'], "'");
+    for phrase in MEETUP_REFUSALS {
+        if let Some(idx) = lower.find(phrase) {
+            let prefix = &text[..idx];
+            let start = prefix
+                .rfind(|c| c == '.' || c == '!' || c == '?' || c == ';')
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let after = &text[idx..];
+            let end = after
+                .find(|c| c == '.' || c == '!' || c == '?' || c == ';')
+                .map(|i| idx + i + 1)
+                .unwrap_or(text.len());
+            let before = text[..start].trim();
+            let remainder = text[end..].trim();
+            let deflection = "You definitely don't waste any time, do you? 😉 I like that energy, but slow down mister—I always take my time getting to know someone and seeing if our chemistry is real first.";
+            let mut result = String::new();
+            if !before.is_empty() {
+                result.push_str(before);
+                result.push(' ');
+            }
+            result.push_str(deflection);
+            if !remainder.is_empty() {
+                result.push(' ');
+                result.push_str(remainder);
+            }
+            return result;
+        }
+    }
+    text.to_string()
+}
+
+/// Sanitizes an unprompted extreme kink into a sensual, scene-appropriate CTA.
+fn sanitize_extreme_kink(text: &str) -> String {
+    let lower = text.to_lowercase();
+    const EXTREME_KINKS: [&str; 8] = [
+        "golden shower",
+        "watersport",
+        "watersports",
+        "piss on",
+        "pissing on",
+        "pee on you",
+        "pee on me",
+        "drink my piss",
+    ];
+    for kink in EXTREME_KINKS {
+        if let Some(idx) = lower.find(kink) {
+            let prefix = &text[..idx];
+            let start = prefix
+                .rfind(|c| c == '.' || c == '!' || c == '?' || c == ';')
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let kept = text[..start].trim_end();
+            let spicy = "What are you going to do to me once you've tasted every single drop?";
+            if kept.is_empty() {
+                return spicy.to_string();
+            } else {
+                return format!("{kept} {spicy}");
+            }
+        }
+    }
+    text.to_string()
 }
 
 /// Sends one request and returns the reply text. Any HTTP error, including a
@@ -1075,7 +1326,10 @@ fn try_attempt_with_options(
                     attempt.reasoning_effort,
                     draft,
                 );
-                request_reply(attempt.url, key, &rewrite)
+                match request_reply(attempt.url, key, &rewrite) {
+                    Ok(r) => Ok(r),
+                    Err(_) => Ok(sanitize_meet_refusal(draft)),
+                }
             } else if let Some(draft) =
                 e.strip_prefix("the reply introduced an unprompted extreme kink: ")
             {
@@ -1089,7 +1343,10 @@ fn try_attempt_with_options(
                     attempt.reasoning_effort,
                     draft,
                 );
-                request_reply(attempt.url, key, &rewrite)
+                match request_reply(attempt.url, key, &rewrite) {
+                    Ok(r) => Ok(r),
+                    Err(_) => Ok(sanitize_extreme_kink(draft)),
+                }
             } else if let Some(draft) = e.strip_prefix("the reply used a generic position CTA: ") {
                 info!(
                     "{} used a generic position CTA, asking it to spice up the closing question",
@@ -1101,7 +1358,10 @@ fn try_attempt_with_options(
                     attempt.reasoning_effort,
                     draft,
                 );
-                request_reply(attempt.url, key, &rewrite)
+                match request_reply(attempt.url, key, &rewrite) {
+                    Ok(r) => Ok(r),
+                    Err(_) => Ok(replace_cliche_position_cta(draft)),
+                }
             } else {
                 Err(e)
             }
@@ -1146,6 +1406,11 @@ fn draft_with_fallback_options(
         "No provider drafted a reply. {}",
         failures.join("; ")
     ))
+}
+
+#[cfg(test)]
+fn draft_with_fallback(attempts: &[Attempt], jpeg_base64: &str) -> Result<String, String> {
+    draft_with_fallback_options(attempts, jpeg_base64, None, None)
 }
 
 fn saved_key(provider: &Provider) -> Option<String> {
@@ -1666,6 +1931,49 @@ mod tests {
             let error = parse_reply(&response).unwrap_err();
             assert!(error.contains("generic position CTA"), "{reply}");
         }
+    }
+
+    #[test]
+    fn phantom_photo_openers_are_stripped_from_text_replies() {
+        // Screenshot 2 scenario
+        let with_photo_opener = "Thank you for sharing that nice picture with me. I would really enjoy making those rolls for you sometime soon. Do you have a sweet tooth for breakfast items as well?";
+        assert_eq!(
+            strip_phantom_photo_opener(with_photo_opener),
+            "I would really enjoy making those rolls for you sometime soon. Do you have a sweet tooth for breakfast items as well?"
+        );
+
+        // Screenshot 3 scenario
+        let hot_pic_opener = "Thank you for sending that hot pic to me. I would like you to slide your cock deep inside my wet pussy and fuck me hard right now. Do you want me slow and deep or wild and fast?";
+        assert_eq!(
+            strip_phantom_photo_opener(hot_pic_opener),
+            "I would like you to slide your cock deep inside my wet pussy and fuck me hard right now. Do you want me slow and deep or wild and fast?"
+        );
+
+        // Standalone photo acknowledgment is left alone
+        let standalone = "Thank you for sharing that nice picture with me.";
+        assert_eq!(strip_phantom_photo_opener(standalone), standalone);
+    }
+
+    #[test]
+    fn generic_position_ctas_are_replaced_with_spicy_situational_alternatives() {
+        let draft = "I definitely do not mind at all; I would really want you to taste me and swallow every drop. What position do you want to start with?";
+        let replaced = replace_cliche_position_cta(draft);
+        assert!(!has_cliche_position_cta(&replaced));
+        assert!(replaced.contains("tasted every single drop"));
+
+        let cowgirl_draft = "I want you to watch me ride you cowgirl and grind on you. Which position do you want to start with?";
+        let replaced_cowgirl = replace_cliche_position_cta(cowgirl_draft);
+        assert!(!has_cliche_position_cta(&replaced_cowgirl));
+        assert!(replaced_cowgirl.contains("grinding on top of you"));
+    }
+
+    #[test]
+    fn meetup_refusals_are_sanitized_to_playful_deflections() {
+        let draft = "Meeting in person is not something I do, but I really enjoy talking and getting to know you right here. What kind of things do you usually like to do when you have free time on the weekend?";
+        let sanitized = sanitize_meet_refusal(draft);
+        assert!(!explicitly_refuses_to_meet(&sanitized));
+        assert!(sanitized.contains("slow down mister"));
+        assert!(sanitized.contains("What kind of things do you usually like to do"));
     }
 
     #[test]

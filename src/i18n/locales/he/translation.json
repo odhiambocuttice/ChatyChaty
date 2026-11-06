@@ -26,6 +26,18 @@
           "draft_reply": {
             "name": "ניסוח תשובה",
             "description": "קורא את הצ׳אט שעל המסך ומקליד תשובה לשדה הפעיל."
+          },
+          "draft_reply_hint": {
+            "name": "Draft Reply with Voice Hint",
+            "description": "Hold to speak a voice guidance hint, then release to draft a customized reply."
+          },
+          "regenerate_reply": {
+            "name": "Regenerate Reply",
+            "description": "Erases the last typed reply and drafts a fresh alternative."
+          },
+          "watch_chat": {
+            "name": "Watch Chat",
+            "description": "Watches the open chat and notifies your Telegram when a new message arrives."
           }
         },
         "errors": {
@@ -38,7 +50,14 @@
         "title": "מיקרופון",
         "description": "בחר את המיקרופון המועדף עליך",
         "placeholder": "בחר מיקרופון...",
-        "loading": "טוען..."
+        "loading": "טוען...",
+        "phone": "Phone (Wi-Fi)",
+        "phoneScan": "Scan this code with your phone's camera and open the page in Chrome.",
+        "phoneConnected": "Phone connected",
+        "phoneWaiting": "Waiting for the phone…",
+        "phoneFirewall": "The first time, Windows may ask to allow Chatelle on private networks. Allow it.",
+        "phoneNewCode": "New code",
+        "phoneCertNote": "Chrome warns that the connection is not private. Tap Advanced, then Proceed. This is expected."
       }
     },
     "advanced": {
@@ -71,7 +90,9 @@
           "description": "הצג שכבת משוב חזותית בזמן הקלטה ותמלול. בלינוקס מומלץ לבחור 'ללא'.",
           "options": {
             "bottom": "למטה",
-            "top": "למעלה"
+            "top": "למעלה",
+            "left": "Left",
+            "right": "Right"
           }
         }
       }
@@ -114,7 +135,8 @@
       "startup": "Startup",
       "speechModel": "Speech model",
       "modelStatus": "Status",
-      "log": "Log"
+      "log": "Log",
+      "quickActions": "Quick Actions"
     },
     "speechModel": {
       "liveDetails": "{{size}} MB · Types as you speak",
@@ -127,6 +149,45 @@
       "copied": "Copied",
       "refresh": "Refresh",
       "openFolder": "Open folder"
+    },
+    "remoteReply": {
+      "title": "Telegram Remote Reply",
+      "description": "Watch an active chat while away and receive new messages and draft replies on Telegram.",
+      "botToken": "Bot Token",
+      "botTokenPlaceholder": "Paste Telegram bot token",
+      "saveToken": "Save",
+      "removeToken": "Remove",
+      "saveFailed": "Could not save token: {{error}}",
+      "botConnected": "Bot: @{{username}}",
+      "statusPaired": "Paired with your Telegram",
+      "statusUnpaired": "Ready to pair",
+      "pairInstructions": "Open Telegram, start your bot, and send this code to connect:",
+      "pairCommand": "/pair {{code}}",
+      "copyCommand": "Copy Command",
+      "copied": "Copied!",
+      "unlink": "Unlink Account",
+      "disclaimer": "Note: Your laptop stays awake while watching. Click your chat's input box, then press your Watch shortcut to start."
+    },
+    "floatingDock": {
+      "title": "Floating Action Dock",
+      "description": "Show an always-on-top floating toolbar with 1-click buttons for Draft, Hint, Re-roll, and Dictate over your apps."
+    },
+    "autoFocusInput": {
+      "title": "Auto-Focus Chat Input",
+      "description": "Automatically detect and click the chat message field so you don't need to move your mouse before drafting."
+    },
+    "quickActions": {
+      "title": "One-Click Actions",
+      "draft": "Draft Reply",
+      "draftDesc": "Reads screen & types reply",
+      "hint": "Voice Hint",
+      "hintDesc": "Speak guidance to steer draft",
+      "reroll": "Re-roll Reply",
+      "rerollDesc": "Erases draft & writes new",
+      "dictate": "Dictate Voice",
+      "dictateDesc": "Transcribes what you speak",
+      "watch": "Watch Chat",
+      "watchDesc": "Alerts Telegram on message"
     }
   },
   "common": {
@@ -148,11 +209,35 @@
     "transcriptionFailedTitle": "התמלול נכשל",
     "typeFailedTitle": "Failed to Type Text",
     "typeFailed": "Text could not be typed into the active application.",
-    "modelDownloadFailed": "Failed to download the speech model"
+    "modelDownloadFailed": "Failed to download the speech model",
+    "phoneNotConnected": "Phone not connected — scan the QR code in Settings",
+    "draftReplyFailedTitle": "Draft Reply Failed",
+    "watchErrorTitle": "Watch Mode Failed",
+    "watchStarted": "Watch Mode Started",
+    "watchStopped": "Watch Mode Stopped"
   },
   "overlay": {
     "transcribing": "מתמלל...",
-    "loadingModel": "טוען מודל..."
+    "loadingModel": "טוען מודל...",
+    "drafting": "Drafting reply...",
+    "hinting": "Speaking hint...",
+    "done": "Done",
+    "dock": {
+      "draft": "Draft",
+      "draftTooltip": "Draft reply to chat on screen",
+      "hint": "Hint",
+      "hintTooltip": "Speak a voice hint for the reply",
+      "reroll": "Re-roll",
+      "rerollTooltip": "Erase previous reply and draft an alternative",
+      "dictate": "Dictate",
+      "dictateTooltip": "Transcribe your voice into text",
+      "watch": "Watch",
+      "watching": "Watching",
+      "watchTooltip": "Watch chat and alert Telegram",
+      "collapse": "Collapse",
+      "expand": "Show Action Dock",
+      "hide": "Close dock"
+    }
   },
   "secureInput": {
     "blockedWithCulprit_one": "ייתכן ש-{{name}} חוסם קיצור דרך אחד",
@@ -197,5 +282,16 @@
     "openSettings": "פתח הגדרות",
     "allowed": "מאושר",
     "waiting": "ממתין"
+  },
+  "phonePage": {
+    "record": "Record",
+    "stop": "Stop",
+    "connected": "Connected",
+    "reconnecting": "Reconnecting…",
+    "recording": "Recording…",
+    "transcribing": "Transcribing…",
+    "micDenied": "Chrome blocked the microphone. Allow it in the site settings and reload.",
+    "micFailed": "Could not start the microphone. Reload the page and try again.",
+    "replaced": "Opened in another tab. Tap to reconnect here."
   }
 }

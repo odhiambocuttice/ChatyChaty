@@ -85,7 +85,7 @@ pub struct ShortcutBinding {
     pub current_binding: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum OverlayPosition {
     Top,
@@ -94,7 +94,10 @@ pub enum OverlayPosition {
     // instead of failing the whole load; the one-time overlay migration reads the
     // raw stored string to recover the old "hidden" intent as `OverlayStyle::None`.
     #[serde(alias = "none")]
+    #[default]
     Bottom,
+    Left,
+    Right,
 }
 
 /// Which recording overlay to display. `Minimal` and `Live` share one base
@@ -303,6 +306,20 @@ pub struct AppSettings {
     /// The port the phone microphone server last listened on.
     #[serde(default)]
     pub phone_microphone_port: Option<u16>,
+    /// Whether to display a floating dock on screen with clickable action buttons.
+    #[serde(default = "default_show_floating_dock")]
+    pub show_floating_dock: bool,
+    /// Whether to automatically detect and focus the chat input box before typing.
+    #[serde(default = "default_auto_focus_input")]
+    pub auto_focus_input: bool,
+}
+
+fn default_auto_focus_input() -> bool {
+    true
+}
+
+fn default_show_floating_dock() -> bool {
+    true
 }
 
 fn default_hold_threshold_ms() -> u64 {
@@ -486,6 +503,8 @@ pub fn get_default_settings() -> AppSettings {
         speech_model: SpeechModel::default(),
         phone_microphone_token: None,
         phone_microphone_port: None,
+        show_floating_dock: default_show_floating_dock(),
+        auto_focus_input: default_auto_focus_input(),
     }
 }
 

@@ -54,12 +54,15 @@ const OVERLAY_HEIGHT: f64 = 50.0;
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
+const OVERLAY_DOCK_WIDTH: f64 = 440.0;
+const OVERLAY_DOCK_HEIGHT: f64 = 60.0;
+
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
-    if state == "streaming" {
-        (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT)
-    } else {
-        (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+    match state {
+        "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
+        "dock" => (OVERLAY_DOCK_WIDTH, OVERLAY_DOCK_HEIGHT),
+        _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
 
@@ -77,20 +80,47 @@ const OVERLAY_BOTTOM_OFFSET: f64 = 15.0;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 const OVERLAY_BOTTOM_OFFSET: f64 = 40.0;
 
+const OVERLAY_SIDE_OFFSET: f64 = 20.0;
+
 /// Configures the edge and offset of a GTK layer surface. gtk-layer-shell
 /// commits anchor and margin changes itself, including while the surface is
 /// mapped, so changing position does not require a manual hide/show cycle.
 #[cfg(target_os = "linux")]
 fn configure_layer_shell_position(gtk_window: &gtk::ApplicationWindow, position: OverlayPosition) {
-    let (edge, opposite_edge, margin) = match position {
-        OverlayPosition::Top => (Edge::Top, Edge::Bottom, OVERLAY_TOP_OFFSET),
-        OverlayPosition::Bottom => (Edge::Bottom, Edge::Top, OVERLAY_BOTTOM_OFFSET),
-    };
-
-    gtk_window.set_anchor(edge, true);
-    gtk_window.set_anchor(opposite_edge, false);
-    gtk_window.set_layer_shell_margin(edge, margin.round() as i32);
-    gtk_window.set_layer_shell_margin(opposite_edge, 0);
+    match position {
+        OverlayPosition::Top => {
+            gtk_window.set_anchor(Edge::Top, true);
+            gtk_window.set_anchor(Edge::Bottom, false);
+            gtk_window.set_anchor(Edge::Left, false);
+            gtk_window.set_anchor(Edge::Right, false);
+            gtk_window.set_layer_shell_margin(Edge::Top, OVERLAY_TOP_OFFSET.round() as i32);
+            gtk_window.set_layer_shell_margin(Edge::Bottom, 0);
+        }
+        OverlayPosition::Bottom => {
+            gtk_window.set_anchor(Edge::Bottom, true);
+            gtk_window.set_anchor(Edge::Top, false);
+            gtk_window.set_anchor(Edge::Left, false);
+            gtk_window.set_anchor(Edge::Right, false);
+            gtk_window.set_layer_shell_margin(Edge::Bottom, OVERLAY_BOTTOM_OFFSET.round() as i32);
+            gtk_window.set_layer_shell_margin(Edge::Top, 0);
+        }
+        OverlayPosition::Left => {
+            gtk_window.set_anchor(Edge::Left, true);
+            gtk_window.set_anchor(Edge::Right, false);
+            gtk_window.set_anchor(Edge::Top, false);
+            gtk_window.set_anchor(Edge::Bottom, false);
+            gtk_window.set_layer_shell_margin(Edge::Left, OVERLAY_SIDE_OFFSET.round() as i32);
+            gtk_window.set_layer_shell_margin(Edge::Right, 0);
+        }
+        OverlayPosition::Right => {
+            gtk_window.set_anchor(Edge::Right, true);
+            gtk_window.set_anchor(Edge::Left, false);
+            gtk_window.set_anchor(Edge::Top, false);
+            gtk_window.set_anchor(Edge::Bottom, false);
+            gtk_window.set_layer_shell_margin(Edge::Right, OVERLAY_SIDE_OFFSET.round() as i32);
+            gtk_window.set_layer_shell_margin(Edge::Left, 0);
+        }
+    }
 }
 
 /// Configures a GTK layer surface before it is shown.
@@ -254,13 +284,19 @@ fn calculate_overlay_position(
     let monitor_x = monitor.position().x as f64 / scale;
     let monitor_y = monitor.position().y as f64 / scale;
     let monitor_width = monitor.size().width as f64 / scale;
+    #[cfg(not(target_os = "macos"))]
+    let monitor_height = monitor.size().height as f64 / scale;
 
     let settings = settings::get_settings(app_handle);
 
-    let x = monitor_x + (monitor_width - width) / 2.0;
-    let y = match settings.overlay_position {
-        OverlayPosition::Top => monitor_y + OVERLAY_TOP_OFFSET,
+    let (x, y) = match settings.overlay_position {
+        OverlayPosition::Top => {
+            let x = monitor_x + (monitor_width - width) / 2.0;
+            let y = monitor_y + OVERLAY_TOP_OFFSET;
+            (x, y)
+        }
         OverlayPosition::Bottom => {
+            let x = monitor_x + (monitor_width - width) / 2.0;
             // work_area.position shares monitor.position's global coordinate
             // space, so no monitor offset is added.
             #[cfg(target_os = "macos")]
@@ -269,9 +305,36 @@ fn calculate_overlay_position(
                 (wa.position.y as f64 + wa.size.height as f64) / scale
             };
             #[cfg(not(target_os = "macos"))]
-            let bottom = monitor_y + monitor.size().height as f64 / scale;
+            let bottom = monitor_y + monitor_height;
 
-            bottom - height - OVERLAY_BOTTOM_OFFSET
+            let y = bottom - height - OVERLAY_BOTTOM_OFFSET;
+            (x, y)
+        }
+        OverlayPosition::Left => {
+            let x = monitor_x + OVERLAY_SIDE_OFFSET;
+            #[cfg(target_os = "macos")]
+            let (work_y, work_height) = {
+                let wa = monitor.work_area();
+                (wa.position.y as f64 / scale, wa.size.height as f64 / scale)
+            };
+            #[cfg(not(target_os = "macos"))]
+            let (work_y, work_height) = (monitor_y, monitor_height);
+
+            let y = work_y + (work_height - height) / 2.0;
+            (x, y)
+        }
+        OverlayPosition::Right => {
+            let x = monitor_x + monitor_width - width - OVERLAY_SIDE_OFFSET;
+            #[cfg(target_os = "macos")]
+            let (work_y, work_height) = {
+                let wa = monitor.work_area();
+                (wa.position.y as f64 / scale, wa.size.height as f64 / scale)
+            };
+            #[cfg(not(target_os = "macos"))]
+            let (work_y, work_height) = (monitor_y, monitor_height);
+
+            let y = work_y + (work_height - height) / 2.0;
+            (x, y)
         }
     };
 
@@ -319,16 +382,33 @@ fn windows_overlay_bounds(
     let content_scale = scale * text_scale;
     let width = (logical_width * content_scale).round().max(1.0) as i32;
     let height = (logical_height * content_scale).round().max(1.0) as i32;
-    let x = (monitor_position.x as f64 + (monitor_size.width as f64 - width as f64) / 2.0).round()
-        as i32;
-    let y = match overlay_position {
-        OverlayPosition::Top => {
-            (monitor_position.y as f64 + OVERLAY_TOP_OFFSET * scale).round() as i32
-        }
-        OverlayPosition::Bottom => (monitor_position.y as f64 + monitor_size.height as f64
-            - height as f64
-            - OVERLAY_BOTTOM_OFFSET * scale)
-            .round() as i32,
+    let (x, y) = match overlay_position {
+        OverlayPosition::Top => (
+            (monitor_position.x as f64 + (monitor_size.width as f64 - width as f64) / 2.0).round()
+                as i32,
+            (monitor_position.y as f64 + OVERLAY_TOP_OFFSET * scale).round() as i32,
+        ),
+        OverlayPosition::Bottom => (
+            (monitor_position.x as f64 + (monitor_size.width as f64 - width as f64) / 2.0).round()
+                as i32,
+            (monitor_position.y as f64 + monitor_size.height as f64
+                - height as f64
+                - OVERLAY_BOTTOM_OFFSET * scale)
+                .round() as i32,
+        ),
+        OverlayPosition::Left => (
+            (monitor_position.x as f64 + OVERLAY_SIDE_OFFSET * scale).round() as i32,
+            (monitor_position.y as f64 + (monitor_size.height as f64 - height as f64) / 2.0).round()
+                as i32,
+        ),
+        OverlayPosition::Right => (
+            (monitor_position.x as f64 + monitor_size.width as f64
+                - width as f64
+                - OVERLAY_SIDE_OFFSET * scale)
+                .round() as i32,
+            (monitor_position.y as f64 + (monitor_size.height as f64 - height as f64) / 2.0).round()
+                as i32,
+        ),
     };
 
     (x, y, width, height)
@@ -634,6 +714,11 @@ pub fn show_drafting_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "drafting");
 }
 
+/// Shows the floating action dock overlay window
+pub fn show_dock_overlay(app_handle: &AppHandle) {
+    show_overlay_state(app_handle, "dock");
+}
+
 /// Updates the overlay window position based on current settings
 pub fn update_overlay_position(app_handle: &AppHandle) {
     // Positioning queries monitors/cursor (GDK/Xlib on Linux) and moves the
@@ -689,11 +774,22 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
 /// the instant it drained, well inside the 300 ms hide delay.
 static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 
-/// Hides the recording overlay window with fade-out animation
+/// Hides the recording overlay window with fade-out animation, or restores the
+/// floating action dock if enabled so the operator's dock stays visible until closed.
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
     phone::notify_state(app_handle, PhoneState::Idle);
-    // Always hide the overlay regardless of settings - if setting was changed while recording,
-    // we still want to hide it properly
+    let settings = settings::get_settings(app_handle);
+    if settings.show_floating_dock && settings.overlay_style != settings::OverlayStyle::None {
+        show_dock_overlay(app_handle);
+        return;
+    }
+    force_hide_overlay(app_handle);
+}
+
+/// Forcibly hides the overlay window, used when the operator explicitly clicks
+/// the close dock button or turns off the floating dock in settings.
+pub fn force_hide_overlay(app_handle: &AppHandle) {
+    phone::notify_state(app_handle, PhoneState::Idle);
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         // Snapshot before doing anything observable, so any show that lands
         // after this point invalidates the delayed hide below.
@@ -842,6 +938,30 @@ mod tests {
                 OverlayPosition::Top,
             ),
             (3648, 6, 384, 75)
+        );
+        assert_eq!(
+            windows_overlay_bounds(
+                monitor_position,
+                monitor_size,
+                1.5,
+                1.0,
+                OVERLAY_WIDTH,
+                OVERLAY_HEIGHT,
+                OverlayPosition::Left,
+            ),
+            (1950, 1043, 384, 75)
+        );
+        assert_eq!(
+            windows_overlay_bounds(
+                monitor_position,
+                monitor_size,
+                1.5,
+                1.0,
+                OVERLAY_WIDTH,
+                OVERLAY_HEIGHT,
+                OverlayPosition::Right,
+            ),
+            (5346, 1043, 384, 75)
         );
     }
 

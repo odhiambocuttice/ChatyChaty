@@ -1,9 +1,19 @@
 import { listen } from "@tauri-apps/api/event";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  Sparkles,
+  Mic,
+  RefreshCw,
+  Radio,
+  Eye,
+  ChevronDown,
+  X,
+} from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
 import type {
+  OverlayPosition,
   StreamPhase,
   StreamPhaseEvent,
   StreamTextEvent,
@@ -12,7 +22,13 @@ import i18n, { syncLanguageFromSettings } from "@/i18n";
 import type { ModelStateEvent } from "@/lib/types/events";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 
-type OverlayState = "recording" | "streaming" | "transcribing" | "drafting";
+type OverlayState =
+  | "recording"
+  | "streaming"
+  | "transcribing"
+  | "drafting"
+  | "dock"
+  | "hinting";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -55,10 +71,12 @@ const RecordingOverlay: React.FC = () => {
   const [session, setSession] = useState(0);
   // Overlay placement (top vs bottom of the screen). The Live panel grows downward
   // from a top overlay (oldest line under the pill) and upward from a bottom one.
-  const [position, setPosition] = useState<"top" | "bottom">("bottom");
+  const [position, setPosition] = useState<OverlayPosition>("bottom");
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [isWatching, setIsWatching] = useState(false);
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   // Live-text scroll-back: the text region "sticks" to the newest line while the
@@ -87,10 +105,8 @@ const RecordingOverlay: React.FC = () => {
         // bottom one; read the placement so the layout can flip to match.
         try {
           const settings = await commands.getAppSettings();
-          if (settings.status === "ok") {
-            setPosition(
-              settings.data.overlay_position === "top" ? "top" : "bottom",
-            );
+          if (settings.status === "ok" && settings.data.overlay_position) {
+            setPosition(settings.data.overlay_position);
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -105,7 +121,21 @@ const RecordingOverlay: React.FC = () => {
         setIsVisible(true);
       });
 
-      const unlistenHide = await listen("hide-overlay", () => {
+      const unlistenHide = await listen("hide-overlay", async () => {
+        try {
+          const settings = await commands.getAppSettings();
+          if (
+            settings.status === "ok" &&
+            settings.data.show_floating_dock &&
+            settings.data.overlay_style !== "none"
+          ) {
+            setState("dock");
+            setIsVisible(true);
+            return;
+          }
+        } catch {
+          // ignore
+        }
         setIsVisible(false);
         setCaptureReady(false);
       });
@@ -163,6 +193,34 @@ const RecordingOverlay: React.FC = () => {
         },
       );
 
+      const unlistenWatch = await listen<boolean>(
+        "watch-state-changed",
+        (event) => {
+          setIsWatching(event.payload);
+        },
+      );
+
+      commands
+        .getAppSettings()
+        .then((res) => {
+          if (
+            res.status === "ok" &&
+            res.data.show_floating_dock &&
+            res.data.overlay_style !== "none"
+          ) {
+            setState("dock");
+            setIsVisible(true);
+          }
+        })
+        .catch(() => {});
+
+      commands
+        .getWatchStatus()
+        .then((res) => {
+          if (res.status === "ok") setIsWatching(res.data);
+        })
+        .catch(() => {});
+
       return () => {
         unlistenShow();
         unlistenHide();
@@ -171,6 +229,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenStream();
         unlistenPhase();
         unlistenModel();
+        unlistenWatch();
         clearTimeout(modelLoadTimerRef.current);
       };
     };
@@ -281,6 +340,225 @@ const RecordingOverlay: React.FC = () => {
       <div className="sbase-r">{showCancel && cancelBtn}</div>
     </div>
   );
+
+  const dockRow = (
+    <div className="sdock">
+      <button
+        type="button"
+        className="sdock-btn sdock-btn-primary"
+        title={t("overlay.dock.draftTooltip", "Draft reply to chat on screen")}
+        onClick={async () => {
+          setState("drafting");
+          try {
+            await commands.triggerDraftReply();
+          } catch (e) {
+            console.error("Draft reply failed:", e);
+          }
+        }}
+      >
+        <Sparkles className="w-3.5 h-3.5 text-logo-primary shrink-0" />
+        <span className="sdock-label">{t("overlay.dock.draft", "Draft")}</span>
+      </button>
+
+      <button
+        type="button"
+        className="sdock-btn"
+        title={t(
+          "overlay.dock.hintTooltip",
+          "Speak a voice hint for the reply",
+        )}
+        onClick={async () => {
+          setState("hinting");
+          try {
+            await commands.triggerDraftReplyHintStart();
+          } catch (e) {
+            console.error("Voice hint start failed:", e);
+          }
+        }}
+      >
+        <Mic className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+        <span className="sdock-label">{t("overlay.dock.hint", "Hint")}</span>
+      </button>
+
+      <button
+        type="button"
+        className="sdock-btn"
+        title={t(
+          "overlay.dock.rerollTooltip",
+          "Erase previous reply and draft an alternative",
+        )}
+        onClick={async () => {
+          setState("drafting");
+          try {
+            await commands.triggerRegenerateReply();
+          } catch (e) {
+            console.error("Regenerate reply failed:", e);
+          }
+        }}
+      >
+        <RefreshCw className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+        <span className="sdock-label">
+          {t("overlay.dock.reroll", "Re-roll")}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className="sdock-btn"
+        title={t(
+          "overlay.dock.dictateTooltip",
+          "Transcribe your voice into text",
+        )}
+        onClick={async () => {
+          try {
+            await commands.triggerTranscribeToggle();
+          } catch (e) {
+            console.error("Transcribe toggle failed:", e);
+          }
+        }}
+      >
+        <Radio className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+        <span className="sdock-label">
+          {t("overlay.dock.dictate", "Dictate")}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className={`sdock-btn ${isWatching ? "active" : ""}`}
+        title={t("overlay.dock.watchTooltip", "Watch chat and alert Telegram")}
+        onClick={async () => {
+          try {
+            const res = await commands.toggleWatchSession();
+            if (res.status === "ok") {
+              setIsWatching(res.data);
+            }
+          } catch (e) {
+            console.error("Toggle watch failed:", e);
+          }
+        }}
+      >
+        {isWatching ? (
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+        ) : (
+          <Eye className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+        )}
+        <span className="sdock-label">{t("overlay.dock.watch", "Watch")}</span>
+      </button>
+
+      <div className="sdock-actions">
+        <button
+          type="button"
+          className="sdock-icon-btn"
+          title={t("overlay.dock.collapse", "Collapse")}
+          onClick={() => setCollapsed(true)}
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          className="sdock-icon-btn"
+          title={t("overlay.dock.hide", "Close dock")}
+          onClick={() => commands.hideDockOverlay()}
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+
+  const hintingRow = (
+    <div className="sbase">
+      <div className="sbase-l">
+        <span className="sdot ready sdot-pulse" />
+        <span className="shint-label">
+          {t("overlay.hinting", "Speaking hint...")}
+        </span>
+      </div>
+      {waveform}
+      <div className="sbase-r">
+        <button
+          type="button"
+          className="sdock-done-btn"
+          onClick={async () => {
+            setState("drafting");
+            try {
+              await commands.triggerDraftReplyHintStop();
+            } catch (e) {
+              console.error("Hint stop error:", e);
+            }
+          }}
+        >
+          {t("overlay.done", "Done")}
+        </button>
+        <button
+          type="button"
+          className="sx"
+          aria-label="cancel"
+          onClick={async () => {
+            try {
+              await commands.cancelOperation();
+              setState("dock");
+            } catch (e) {
+              console.error("Cancel error:", e);
+            }
+          }}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M4 4 L12 12 M12 4 L4 12"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+
+  // ---- Dock overlay: floating action toolbar with 1-click buttons ----
+  if (state === "dock") {
+    if (collapsed) {
+      return (
+        <div
+          dir={direction}
+          className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+        >
+          <div className="scard compact sdock-collapsed">
+            <button
+              type="button"
+              className="sdock-expand-btn"
+              title={t("overlay.dock.expand", "Show Action Dock")}
+              onClick={() => setCollapsed(false)}
+            >
+              ✨
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        dir={direction}
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard dock">{dockRow}</div>
+      </div>
+    );
+  }
+
+  if (state === "hinting") {
+    return (
+      <div
+        dir={direction}
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard compact cworking">{hintingRow}</div>
+      </div>
+    );
+  }
 
   // ---- Live overlay: a pill that sculpts open into a panel ----
   if (state === "streaming") {

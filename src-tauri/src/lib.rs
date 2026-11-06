@@ -302,6 +302,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
 
+    if settings.show_floating_dock && settings.overlay_style != settings::OverlayStyle::None {
+        overlay::show_dock_overlay(app_handle);
+    }
+
     // Get the one model ready now, not on the first dictation: download it if
     // it is missing, then load it. After this the model stays loaded.
     let model_app_handle = app_handle.clone();
@@ -427,6 +431,8 @@ fn build_specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_keyboard_implementation_setting,
             shortcut::get_keyboard_implementation,
             shortcut::change_show_tray_icon_setting,
+            shortcut::change_show_floating_dock_setting,
+            shortcut::change_auto_focus_input_setting,
             shortcut::handy_keys::start_handy_keys_recording,
             shortcut::handy_keys::stop_handy_keys_recording,
             secure_input::get_secure_input_status,
@@ -442,6 +448,13 @@ fn build_specta_builder() -> Builder<tauri::Wry> {
             commands::unlink_telegram,
             commands::toggle_watch_session,
             commands::get_watch_status,
+            commands::trigger_draft_reply,
+            commands::trigger_draft_reply_hint_start,
+            commands::trigger_draft_reply_hint_stop,
+            commands::trigger_regenerate_reply,
+            commands::trigger_transcribe_toggle,
+            commands::show_dock_overlay,
+            commands::hide_dock_overlay,
             commands::get_log_text,
             commands::get_log_dir_path,
             commands::set_log_level,

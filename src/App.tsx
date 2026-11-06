@@ -23,6 +23,8 @@ import {
   TypingSpeed,
 } from "./components/settings";
 import { SettingsGroup } from "./components/ui/SettingsGroup";
+import { ToggleSwitch } from "./components/ui/ToggleSwitch";
+import { Sparkles, Mic, RefreshCw, Radio, Eye } from "lucide-react";
 import appIcon from "../src-tauri/icons/128x128@2x.png";
 import { usePermissions } from "./hooks/usePermissions";
 import { useSettings } from "./hooks/useSettings";
@@ -44,7 +46,7 @@ function App() {
   const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<Tab>("shortcuts");
   const direction = getLanguageDirection(i18n.language);
-  const { refreshAudioDevices } = useSettings();
+  const { settings, updateSetting, refreshAudioDevices } = useSettings();
   const permissions = usePermissions();
   const hasInitialized = useRef(false);
 
@@ -282,6 +284,116 @@ function App() {
             >
               {tab === "shortcuts" && (
                 <>
+                  <SettingsGroup title={t("settings.groups.quickActions")}>
+                    <ToggleSwitch
+                      checked={settings?.show_floating_dock ?? true}
+                      onChange={(val) => {
+                        commands.changeShowFloatingDockSetting(val);
+                        updateSetting("show_floating_dock", val);
+                      }}
+                      label={t("settings.floatingDock.title")}
+                      description={t("settings.floatingDock.description")}
+                      descriptionMode="inline"
+                      grouped={true}
+                    />
+                    <ToggleSwitch
+                      checked={settings?.auto_focus_input ?? true}
+                      onChange={(val) => {
+                        commands.changeAutoFocusInputSetting(val);
+                        updateSetting("auto_focus_input", val);
+                      }}
+                      label={t("settings.autoFocusInput.title")}
+                      description={t("settings.autoFocusInput.description")}
+                      descriptionMode="inline"
+                      grouped={true}
+                    />
+                    <div className="p-3.5 bg-background border border-line rounded-control mt-2">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2.5">
+                        {t("settings.quickActions.title")}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => commands.triggerDraftReply()}
+                          className="flex items-center gap-2 p-2.5 rounded-control border border-line bg-surface hover:border-logo-primary hover:bg-logo-primary/10 transition-all text-left group cursor-pointer"
+                        >
+                          <Sparkles className="w-5 h-5 text-logo-primary shrink-0" />
+                          <div>
+                            <div className="text-xs font-semibold text-ink-1 group-hover:text-logo-primary">
+                              {t("settings.quickActions.draft")}
+                            </div>
+                            <div className="text-[11px] text-ink-3">
+                              {t("settings.quickActions.draftDesc")}
+                            </div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => commands.triggerDraftReplyHintStart()}
+                          className="flex items-center gap-2 p-2.5 rounded-control border border-line bg-surface hover:border-logo-primary hover:bg-logo-primary/10 transition-all text-left group cursor-pointer"
+                        >
+                          <Mic className="w-5 h-5 text-purple-400 shrink-0" />
+                          <div>
+                            <div className="text-xs font-semibold text-ink-1 group-hover:text-logo-primary">
+                              {t("settings.quickActions.hint")}
+                            </div>
+                            <div className="text-[11px] text-ink-3">
+                              {t("settings.quickActions.hintDesc")}
+                            </div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => commands.triggerRegenerateReply()}
+                          className="flex items-center gap-2 p-2.5 rounded-control border border-line bg-surface hover:border-logo-primary hover:bg-logo-primary/10 transition-all text-left group cursor-pointer"
+                        >
+                          <RefreshCw className="w-5 h-5 text-blue-400 shrink-0" />
+                          <div>
+                            <div className="text-xs font-semibold text-ink-1 group-hover:text-logo-primary">
+                              {t("settings.quickActions.reroll")}
+                            </div>
+                            <div className="text-[11px] text-ink-3">
+                              {t("settings.quickActions.rerollDesc")}
+                            </div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => commands.triggerTranscribeToggle()}
+                          className="flex items-center gap-2 p-2.5 rounded-control border border-line bg-surface hover:border-logo-primary hover:bg-logo-primary/10 transition-all text-left group cursor-pointer"
+                        >
+                          <Radio className="w-5 h-5 text-amber-400 shrink-0" />
+                          <div>
+                            <div className="text-xs font-semibold text-ink-1 group-hover:text-logo-primary">
+                              {t("settings.quickActions.dictate")}
+                            </div>
+                            <div className="text-[11px] text-ink-3">
+                              {t("settings.quickActions.dictateDesc")}
+                            </div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => commands.toggleWatchSession()}
+                          className="flex items-center gap-2 p-2.5 rounded-control border border-line bg-surface hover:border-logo-primary hover:bg-logo-primary/10 transition-all text-left group cursor-pointer"
+                        >
+                          <Eye className="w-5 h-5 text-emerald-400 shrink-0" />
+                          <div>
+                            <div className="text-xs font-semibold text-ink-1 group-hover:text-logo-primary">
+                              {t("settings.quickActions.watch")}
+                            </div>
+                            <div className="text-[11px] text-ink-3">
+                              {t("settings.quickActions.watchDesc")}
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </SettingsGroup>
                   <SettingsGroup title={t("settings.groups.keyboardShortcuts")}>
                     <ShortcutInput
                       shortcutId="transcribe"
