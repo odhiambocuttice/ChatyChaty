@@ -160,9 +160,51 @@ fn get_front_window_macos() -> Result<(u32, i32, String, String, i32, i32, i32, 
     Err(format!("Could not find an active window for {app_name}"))
 }
 
-#[cfg(not(target_os = "macos"))]
-fn get_front_window_macos() -> Result<(u32, i32, String, String, i32, i32, i32, i32), String> {
-    Err("Watch mode is currently supported on macOS".to_string())
+#[cfg(target_os = "macos")]
+fn get_front_window() -> Result<(u32, i32, String, String, i32, i32, i32, i32), String> {
+    get_front_window_macos()
+}
+
+#[cfg(target_os = "windows")]
+fn get_front_window() -> Result<(u32, i32, String, String, i32, i32, i32, i32), String> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
+    };
+
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_invalid() || hwnd.0.is_null() {
+            return Err("No active window in front".to_string());
+        }
+
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+
+        let mut title_buf = [0u16; 512];
+        let len = GetWindowTextW(hwnd, &mut title_buf);
+        let title = String::from_utf16_lossy(&title_buf[..len as usize]);
+        let app_name = if title.is_empty() {
+            "Chat Window".to_string()
+        } else {
+            title.clone()
+        };
+
+        let mut rect = RECT::default();
+        let _ = GetWindowRect(hwnd, &mut rect);
+        let x = rect.left;
+        let y = rect.top;
+        let w = rect.right - rect.left;
+        let h = rect.bottom - rect.top;
+
+        let win_id = hwnd.0 as usize as u32;
+        Ok((win_id, pid as i32, app_name, title, x, y, w, h))
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn get_front_window() -> Result<(u32, i32, String, String, i32, i32, i32, i32), String> {
+    Err("Watch mode is currently supported on macOS and Windows".to_string())
 }
 
 /// Captures a specific window by its window ID as JPEG bytes.
@@ -200,9 +242,99 @@ pub fn capture_window_jpeg(window_id: u32) -> Result<Vec<u8>, String> {
     result
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+pub fn capture_window_jpeg(window_id: u32) -> Result<Vec<u8>, String> {
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::Graphics::Gdi::{
+        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
+        GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+        SRCCOPY,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, PrintWindow, PRINT_WINDOW_FLAGS};
+
+    let hwnd = HWND(window_id as usize as *mut _);
+    let mut rect = RECT::default();
+    unsafe {
+        let _ = GetWindowRect(hwnd, &mut rect);
+    }
+    let width = (rect.right - rect.left).max(1);
+    let height = (rect.bottom - rect.top).max(1);
+
+    let mut bgra = vec![0u8; width as usize * height as usize * 4];
+    unsafe {
+        let window_dc = GetDC(Some(hwnd));
+        if window_dc.is_invalid() {
+            return Err("Could not get window device context".to_string());
+        }
+        let memory = CreateCompatibleDC(Some(window_dc));
+        let bitmap = CreateCompatibleBitmap(window_dc, width, height);
+        let previous = SelectObject(memory, bitmap.into());
+
+        // Try PrintWindow first (renders window even if occluded), fallback to BitBlt
+        let printed = PrintWindow(hwnd, memory, PRINT_WINDOW_FLAGS(2)); // PW_RENDERFULLCONTENT
+        if !printed.as_bool() {
+            let _ = BitBlt(memory, 0, 0, width, height, Some(window_dc), 0, 0, SRCCOPY);
+        }
+
+        SelectObject(memory, previous);
+        let mut info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width,
+                biHeight: -height,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rows = GetDIBits(
+            memory,
+            bitmap,
+            0,
+            height as u32,
+            Some(bgra.as_mut_ptr().cast()),
+            &mut info,
+            DIB_RGB_COLORS,
+        );
+        let _ = DeleteObject(bitmap.into());
+        let _ = DeleteDC(memory);
+        ReleaseDC(Some(hwnd), window_dc);
+        if rows != height {
+            return Err("Could not read window pixels".to_string());
+        }
+    }
+
+    let rgb: Vec<u8> = bgra
+        .chunks_exact(4)
+        .flat_map(|pixel| [pixel[2], pixel[1], pixel[0]])
+        .collect();
+    let screenshot = image::RgbImage::from_raw(width as u32, height as u32, rgb)
+        .ok_or_else(|| "The captured window image has an invalid size".to_string())?;
+
+    let longest = width.max(height) as u32;
+    let screenshot = if longest > 1600 {
+        let scale = 1600.0 / longest as f64;
+        image::imageops::thumbnail(
+            &screenshot,
+            (width as f64 * scale).round() as u32,
+            (height as f64 * scale).round() as u32,
+        )
+    } else {
+        screenshot
+    };
+
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 80)
+        .encode_image(&screenshot)
+        .map_err(|e| format!("Could not encode JPEG: {e}"))?;
+    Ok(jpeg)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn capture_window_jpeg(_window_id: u32) -> Result<Vec<u8>, String> {
-    Err("Window capture is only supported on macOS".to_string())
+    Err("Window capture is only supported on macOS and Windows".to_string())
 }
 
 pub fn capture_watched_window() -> Result<Vec<u8>, String> {
@@ -225,7 +357,7 @@ pub fn start_watch_session(app: AppHandle) -> Result<String, String> {
     // Get cursor position right when user triggers watch (assuming they clicked input box)
     let cursor = crate::input::get_cursor_position(&app).unwrap_or((400, 700));
 
-    let (win_id, pid, app_name, win_name, wx, wy, _ww, wh) = get_front_window_macos()?;
+    let (win_id, pid, app_name, win_name, wx, wy, _ww, wh) = get_front_window()?;
 
     // Calculate offset from bottom-left corner of the window
     let win_bottom = wy + wh;
@@ -245,11 +377,21 @@ pub fn start_watch_session(app: AppHandle) -> Result<String, String> {
     *CURRENT_WINDOW.lock().unwrap() = Some(watched);
     WATCHING.store(true, Ordering::SeqCst);
 
-    // Keep display awake with caffeinate -di
+    // Keep display awake with caffeinate -di on macOS, SetThreadExecutionState on Windows
     #[cfg(target_os = "macos")]
     {
         let child = Command::new("caffeinate").args(["-di"]).spawn().ok();
         *CAFFEINATE_CHILD.lock().unwrap() = child;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::System::Power::{
+            SetThreadExecutionState, ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
+        };
+        unsafe {
+            SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+        }
     }
 
     // Spawn watcher background thread
@@ -271,6 +413,14 @@ pub fn stop_watch_session() {
     {
         if let Some(mut child) = CAFFEINATE_CHILD.lock().unwrap().take() {
             let _ = child.kill();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::System::Power::{SetThreadExecutionState, ES_CONTINUOUS};
+        unsafe {
+            SetThreadExecutionState(ES_CONTINUOUS);
         }
     }
 
@@ -452,6 +602,20 @@ pub fn send_pending_reply(app: AppHandle, message_id: i64) -> Result<(), String>
             NSRunningApplication::runningApplicationWithProcessIdentifier(win.pid)
         {
             app_obj.activateWithOptions(NSApplicationActivationOptions::empty());
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetForegroundWindow, ShowWindow, SW_RESTORE,
+        };
+        unsafe {
+            let hwnd = HWND(win.window_id as usize as *mut _);
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = SetForegroundWindow(hwnd);
         }
         std::thread::sleep(Duration::from_millis(250));
     }
