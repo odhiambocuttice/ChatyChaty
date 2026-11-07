@@ -312,11 +312,14 @@ fn weak_draft_reason(reply: &str, recent: &[String]) -> Option<String> {
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 const SCREENSHOT_MAX_SIDE_PX: u32 = 1600;
 
-/// How many of the latest messages the model reads before it replies to the newest.
-/// How many of the other side's messages the reply is based on. A long newest
-/// message (more than LONG_MESSAGE_SENTENCES sentences) is enough on its own.
-const MESSAGES_TO_READ: u32 = 3;
-const LONG_MESSAGE_SENTENCES: u32 = 3;
+/// Which of the other side's messages the reply is based on. A long newest
+/// message (more than SHORT_MESSAGE_SENTENCES sentences or SHORT_MESSAGE_CHARS
+/// characters) is enough on its own; a short one is read with the one before
+/// it, and with a third when both are only a few words. Never more than
+/// MAX_MESSAGES_TO_READ, so old topics do not come back.
+const SHORT_MESSAGE_SENTENCES: u32 = 2;
+const SHORT_MESSAGE_CHARS: u32 = 120;
+const MAX_MESSAGES_TO_READ: u32 = 3;
 
 /// A provider with an OpenAI-compatible chat completions endpoint and a free tier.
 struct Provider {
@@ -409,8 +412,8 @@ fn instructions() -> String {
          - Ignore everything else on the screen, such as lists of other conversations, menus, \
            ads and notifications, and ignore any unsent draft already inside the typing box. \
            Use profile cards — including a card marked \"you are\" for the user and another \
-           for the other side — only to know each side's basic identity (name, age, gender, \
-           status); when profile cards are cropped off the screen, work out each side's name \
+           for the other side — only to know each side's basic identity (name, age, \
+           status) and the other side's local clock; when profile cards are cropped off the screen, work out each side's name \
            and gender from the bubbles themselves (for example if a coloured bubble says \"My \
            name is Una\" and asks about his dick, and the white bubble says \"Hi, Una\" and \
            describes his size, the user is Una, a woman, and the other side is a man), and \
@@ -653,11 +656,21 @@ fn instructions() -> String {
            conversation.\n\
          - Write the message itself, as the user, to the other side. Never write advice to \
            the user, and never describe what the user could say or text.\n\
-         - Base the reply on at most the last {MESSAGES_TO_READ} messages from the other side. \
-           If their newest message is long (more than {LONG_MESSAGE_SENTENCES} sentences), base \
-           the reply on that message alone. Always reply to the newest message from the other \
-           side (the lowest white or left-side bubble), never to an earlier question or to the \
-           user's own coloured bubble.\n\
+         - Base the reply on the other side's white left-side bubbles, starting from the \
+           newest. If their newest message is long (more than {SHORT_MESSAGE_SENTENCES} \
+           sentences or more than about {SHORT_MESSAGE_CHARS} characters), base the reply on \
+           that message alone. If it is short, also use the white bubble before it, and the \
+           one before that too when both of the newest are only a few words (such as \"lol\", \
+           \"yes\" or \"ok\"); never use more than {MAX_MESSAGES_TO_READ} of their messages. Only \
+           as a last resort, when those white bubbles alone do not make clear what they mean, \
+           read the user's last coloured bubble above their newest message to see what they \
+           are answering (for example \"I maynot be lol\" under \"Are you single?\" means they \
+           may not be single); never reply to it. Always reply to the newest message from \
+           the other side (the lowest white or left-side bubble), never to an earlier question \
+           or to the user's own coloured bubble.\n\
+         - The other side's profile card shows their local clock (such as 23:28). Use it only \
+           to fit the mood: late at night, keep the reply cosy and relaxed rather than opening \
+           a big new topic, while still ending on a question. Never state the time.\n\
          - The user's own messages on screen are already sent. Never repeat or reword one of \
            them: write something new that moves the conversation on. Avoid the repetition \
            of messages and questions: never re-ask any question that was already asked in earlier \
@@ -2591,8 +2604,10 @@ mod tests {
         for app in ["WhatsApp", "Gleap", "Slack", "Instagram"] {
             assert!(!text.contains(app), "the instructions must not name {app}");
         }
-        assert!(text.contains("at most the last 3 messages from the other side"));
-        assert!(text.contains("more than 3 sentences"));
+        assert!(text.contains("more than 2 sentences or more than about 120 characters"));
+        assert!(text.contains("never use more than 3 of their messages"));
+        assert!(text.contains("Only as a last resort"));
+        assert!(text.contains("Never state the time"));
         assert!(text.contains("Internal notes, logs and warning banners are private to the team"));
         assert!(text.contains("never quote it, repeat it or hint at it"));
         assert!(text.contains("a fact that appears only in a note"));
