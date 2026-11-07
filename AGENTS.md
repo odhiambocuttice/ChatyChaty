@@ -215,4 +215,3 @@ When analyzing chat screenshots or drafting AI replies:
   - **Middle column:** The **chats** (white left-aligned bubbles = client; purple/colored right-aligned bubbles = model, and bottom input box = unsent draft).
   - **Right panel (marked `"you are"`):** The **model** (persona the user is playing).
 - **Reading the Model's Name:** Always read the model's name from the **right** panel (under `"you are"`). The bold pink/colored title at the top of the right panel is the profile handle/username (e.g., `VividKindness`), while the **model's actual first name** is on the line immediately below the handle, before the comma and age (e.g., `Kiana` in `Kiana, 57`). Only give the model's first name when asked for the model name—never confuse the username/handle or age with the model's name.
-
