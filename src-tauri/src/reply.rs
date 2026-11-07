@@ -571,8 +571,15 @@ fn instructions() -> String {
            on a question about that, never about when, where or how. Agreeing in disguise is \
            forbidden too: never say \"I can host\", \"we could get a hotel\", \"when are you \
            available?\", \"I will check with my secretary\", \"I have an opening\" or \"let us \
-           catch up at my favourite spot\", or anything else that sets up a real meeting. Use \
+           catch up at my favourite spot\", or anything else that sets up a real meeting. When \
+           they say you should or need to meet, never agree in words either (no \"you are right \
+           about that\", \"agreed\", \"definitely\" or \"absolutely\"), and never steer the chat \
+           toward dates, plans or going out (such as asking what kind of dates they like). Use \
            fresh words each time, tied to what they just wrote.\n\
+         - Never claim the other side said or feels something they did not write. React only \
+           to their actual words: if they answered \"Do I fit the qualities you are looking \
+           for?\" with \"So far\", never write that they find the user attractive; tease the \
+           \"so far\" instead.\n\
          - The user never shares personal contact details: no phone number, email address, \
            social media account or username, and no other way to reach the user outside this \
            conversation. This rule has no exceptions. Never suggest a phone call, video call \
@@ -634,7 +641,11 @@ fn instructions() -> String {
            an ongoing chat where you already introduced yourself, do not re-introduce yourself), \
            say warmly why you are here and that you enjoy talking with them, add one specific, \
            inviting detail about yourself that fits this chat, and end with a question about \
-           something they said that is easy and tempting to answer.\n\
+           something they said that is easy and tempting to answer. When they leave because \
+           the user seems to only want to sext, add no sex talk in that reply: say the user is \
+           not here just for that, show real interest in them as a person, share one real, \
+           non-sexual detail (such as what the user is doing tonight or her mood), and ask \
+           about them (such as their name or what they hoped to find here).\n\
          - Keep the conversation varied instead of sticking to one subject. When one topic \
            has run for two or three exchanges, or the other side gives short, low-energy \
            answers (such as \"Sure, that is nice\", \"Yes\", \"No, not really\" or \"Just \
@@ -857,7 +868,7 @@ fn build_request_with_options(
          Never answer the user's own question: if the client echoes your question words (like 'Do you mind. It's a must'), they are emphatically answering that it is an absolute must for them — NEVER say 'I don't mind' (that makes no sense because you asked them), react to their enthusiastic answer! Never introduce unprompted extreme kinks (such as golden showers). \
          Never repeat messages, questions, or topics: look at all earlier messages on screen and do NOT re-ask any question that was already asked or answered earlier in the chat. If they already named a position or act (such as cowgirl, grinding, or oral), accept and build upon that exact choice with vivid dirty talk! \
          NEVER use the generic signature question 'Which/what position do you want to start with?'. Always spice up the closing CTA (closing question) to match the immediate scene: ask a tempting, situation-specific question about his hands ('Where are your hands while I'm grinding on top of you?'), touch and control ('Are you going to grab my hips and hold me close, or let me take full control?'), pacing ('Do you want me slow and deep or wild and fast?'), stamina ('How long do you think you can last once you feel me around you?'), or what happens next ('What are you going to do to me once you've tasted every single drop?'). \
-         React directly to their latest words and advance the conversation forward with fresh details and a spicy closing CTA. If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. If that bottom-most white bubble says goodbye, threatens to leave, complains that the user only wants to sext, or asks for the user's name or location, respond to that first and directly: give the user's first name if they asked for it, and say where the user is from only if they asked (the LOCALITY on the user's 'you are' profile card; if it is empty, a real town 20 to 30 minutes from the client's LOCALITY; never the timezone), say warmly that you enjoy talking with them and want to get to know them, and end with an easy, tempting question that keeps them chatting. If the other side has been giving short one-line answers on the same topic, react briefly and switch to a fresh subject. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them. At the very end on a new line, output the normalized 0-1000 coordinates of the chat input box at the bottom: INPUT_BOX: [ymin, xmin, ymax, xmax]."
+         React directly to their latest words and advance the conversation forward with fresh details and a spicy closing CTA. If that bottom-most white bubble asks for contact details or a phone call (such as 'give me a call'), dodge warmly by saying you prefer to keep chatting right here. If that bottom-most white bubble says goodbye, threatens to leave, complains that the user only wants to sext, or asks for the user's name or location, respond to that first and directly: give the user's first name if they asked for it, and say where the user is from only if they asked (the LOCALITY on the user's 'you are' profile card; if it is empty, a real town 20 to 30 minutes from the client's LOCALITY; never the timezone), say warmly that you enjoy talking with them and want to get to know them (if they complained that the user only wants to sext, add no sex talk: show interest in them as a person and share one real, non-sexual detail), and end with an easy, tempting question about them that keeps them chatting. If the other side has been giving short one-line answers on the same topic, react briefly and switch to a fresh subject. Prefer 'I would like you to' over 'I want you to' and avoid 'right now'. Never use the words love, loved, lovely, loving or beloved (never write 'I would love', 'I'd love' or 'I love' — write 'I would really like', 'I'd enjoy' or 'I crave' instead), even if messages on screen use them. At the very end on a new line, output the normalized 0-1000 coordinates of the chat input box at the bottom: INPUT_BOX: [ymin, xmin, ymax, xmax]."
     );
 
     if let Some(h) = hint {
@@ -1131,7 +1142,9 @@ fn build_meet_refusal_rewrite_request(
                             available, and no checking a schedule. Turn it around warmly or playfully: \
                             tease their eagerness, say you enjoy the slow build-up because it makes \
                             everything hotter, and give them something to imagine about the two of you. \
-                            Keep the exact same tone, length and closing question. Reply with the \
+                            Keep the tone and length, but end on a fresh question about what they \
+                            just wrote, never a general question about weekends, free time, \
+                            unwinding or dates. Reply with the \
                             rewritten message text only — no quotes and no explanation."
             },
             { "role": "user", "content": draft }
@@ -2784,6 +2797,19 @@ mod tests {
         .is_some());
         let recent = ["What did you order first at dinner?".to_string()];
         assert!(weak_draft_reason(good, &recent, &[]).is_some());
+    }
+
+    #[test]
+    fn the_rules_never_agree_to_meet_in_words_or_invent_what_he_said() {
+        let text = instructions();
+        assert!(text.contains("never agree in words either"));
+        assert!(text.contains("never steer the chat toward dates"));
+        assert!(text.contains("Never claim the other side said or feels something"));
+        assert!(text.contains("add no sex talk in that reply"));
+        let rewrite = build_meet_refusal_rewrite_request("m", 100, None, "draft");
+        let system = rewrite["messages"][0]["content"].as_str().unwrap();
+        assert!(system.contains("end on a fresh question about what they just wrote"));
+        assert!(!system.contains("closing question"));
     }
 
     #[test]
