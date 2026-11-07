@@ -90,6 +90,9 @@ struct PromptExtras {
     recent_ctas: Vec<String>,
     /// The last few drafts typed, newest last, so this one starts differently.
     recent_drafts: Vec<String>,
+    /// The user was asked to open the client's photo and drafted again
+    /// without it: write the reply anyway.
+    photo_left_closed: bool,
     style_samples: Vec<String>,
     /// For the three versions to choose from: how this one should differ.
     variant: Option<String>,
@@ -121,6 +124,7 @@ fn prompt_extras(variant: Option<&str>) -> PromptExtras {
     PromptExtras {
         recent_ctas: recent_ctas(),
         recent_drafts: recent_drafts(RECENT_OPENINGS_CHECKED),
+        photo_left_closed: photo_left_closed(),
         style_samples: crate::chat_memory::style_samples(STYLE_SAMPLES_IN_PROMPT),
         variant: variant.map(str::to_string),
         window_text: WINDOW_TEXT.lock().ok().and_then(|g| g.clone()),
@@ -228,6 +232,7 @@ fn written_by_chatelle(message: &str) -> bool {
 /// Keeps a draft that is about to be typed: as the one Re-roll replaces, as a
 /// closing question not to repeat, and as what it taught about the user's tone.
 pub fn accept_draft(reply: &str) {
+    set_open_photo_asked(false);
     if let Ok(mut drafts) = RECENT_DRAFTS.lock() {
         drafts.push_back(reply.to_string());
         while drafts.len() > RECENT_DRAFTS_KEPT {
@@ -290,6 +295,30 @@ const STOCK_PHRASES: &[&str] = &[
 fn stock_phrase(text: &str) -> Option<&'static str> {
     let lower = text.to_lowercase().replace('\u{2019}', "'");
     STOCK_PHRASES.iter().copied().find(|p| lower.contains(p))
+}
+
+/// Shown to the user when the client's newest photo is still blurred: the
+/// model can only react to what it shows once it is open.
+const OPEN_PHOTO: &str = "The client sent a photo. Click it to open it, then draft again.";
+
+/// When Chatelle last asked the user to open a photo. Drafting again soon
+/// after means the user chose not to open it, so the reply is written anyway.
+static OPEN_PHOTO_ASKED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+const OPEN_PHOTO_ANSWER_WINDOW: Duration = Duration::from_secs(180);
+
+/// True when the user was just asked to open a photo and is drafting again.
+fn photo_left_closed() -> bool {
+    OPEN_PHOTO_ASKED
+        .lock()
+        .ok()
+        .and_then(|g| *g)
+        .is_some_and(|asked| asked.elapsed() < OPEN_PHOTO_ANSWER_WINDOW)
+}
+
+fn set_open_photo_asked(asked: bool) {
+    if let Ok(mut guard) = OPEN_PHOTO_ASKED.lock() {
+        *guard = asked.then(std::time::Instant::now);
+    }
 }
 
 /// Shown to the user when the chat is scrolled up: a draft from that screen
@@ -678,11 +707,20 @@ fn instructions() -> String {
            \"Thank you for sending that hot pic\", or ANY mention of pictures, pics or photos! Opening \
            with a photo thank-you when no photo was sent breaks trust and exposes you as a broken bot. \
            Whenever the newest left-side white bubble from the other side contains a photo \
-           (and has no conversation text), always acknowledge the new photo in your very first sentence, thank them for sharing it, and \
-           compliment it nicely (for example \"Thank you for sharing that hot pic with me\"). Do not refer to it as \"a huge code\" and do not explicitly \
+           (and has no conversation text), always acknowledge the new photo in your very first sentence and \
+           compliment it nicely. Do not refer to it as \"a huge code\" and do not explicitly \
            call it a \"dick pic\": keep the compliment natural, appreciative, and hot or wholesome \
            to match the chat, answer any question in their message directly, and end with an \
            engaging question.\n\
+         - A photo from the other side that is still hidden: if the newest left-side white \
+           bubble holds a photo that is still blurred or covered (a blurred square, or a dimmed \
+           photo with an eye icon), reply with OPEN_PHOTO only, so the user can click it open \
+           first, unless the prompt says the user chose to draft without opening it. When that \
+           photo is open and clear, react to what it actually shows: name one or two specific \
+           things you can see (such as the place, their smile, their outfit, or in an already \
+           explicit chat their body), and compliment or flirt about them to match the chat \
+           (strictly wholesome under a non-sexual banner). Never give generic thanks for \
+           \"the picture\", and never describe anything you cannot see.\n\
          - Never use the word love or any word made from it, such as loved, loving or \
            lovely, even when the other side uses it first. Use other words instead, such as \
            enjoy, like, glad or happy, or want and crave in a flirty chat.\n\
@@ -863,7 +901,7 @@ fn build_request_with_options(
 ) -> Value {
     let mut prompt = String::from(
         "Examples below only show the idea: never copy their words. Write the reply (or NO_CONVERSATION if there is no conversation on screen, or SCROLLED_UP if the chat is scrolled up and its newest messages are not on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. \
-         CRITICAL PHOTO RULE: The other side's messages are almost always pure text. Note that small grey report triangle icons (▲), emojis, avatars, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (talking about food, desserts, cinnamon rolls, bodies, acts, or conversation), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture', 'Thank you for sending that hot pic', or any variation of thanking for pictures, and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), acknowledge the photo. \
+         CRITICAL PHOTO RULE: The other side's messages are almost always pure text. Note that small grey report triangle icons (▲), emojis, avatars, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (talking about food, desserts, cinnamon rolls, bodies, acts, or conversation), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture', 'Thank you for sending that hot pic', or any variation of thanking for pictures, and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), acknowledge the photo: if it is still blurred or covered, answer OPEN_PHOTO only (unless told below that the user chose not to open it); if it is open and clear, react to one or two specific things it shows. \
          CRITICAL MEETUP RULE: If the other side brings up meeting in person or says you need to meet (e.g. 'we need to meet each other', 'can we meet', 'let's meet up'): NEVER say you cannot meet, NEVER say 'meeting in person is not something I do', NEVER say 'I don't meet in person', and NEVER say 'I prefer chatting right here' (this creates an immediate dead end). Don't suggest meeting, but don't say you can't meet! Deflect playfully and flirtatiously: tease that they are getting ahead of themselves, or say you love taking your time to get to know someone and build a real vibe first, in fresh words tied to what they just wrote, and end on a question about that. \
          Never answer the user's own question: if the client echoes your question words (like 'Do you mind. It's a must'), they are emphatically answering that it is an absolute must for them — NEVER say 'I don't mind' (that makes no sense because you asked them), react to their enthusiastic answer! Never introduce unprompted extreme kinks (such as golden showers). \
          Never repeat messages, questions, or topics: look at all earlier messages on screen and do NOT re-ask any question that was already asked or answered earlier in the chat. If they already named a position or act (such as cowgirl, grinding, or oral), accept and build upon that exact choice with vivid dirty talk! \
@@ -896,6 +934,13 @@ fn build_request_with_options(
         for cta in &extras.recent_ctas {
             prompt.push_str(&format!("\n- \"{cta}\""));
         }
+    }
+
+    if extras.photo_left_closed {
+        prompt.push_str(
+            "\n\nTHE USER CHOSE NOT TO OPEN THE PHOTO: never answer OPEN_PHOTO. If their photo is \
+             still blurred, reply to the rest of their message without describing what is in it.",
+        );
     }
 
     if !extras.recent_drafts.is_empty() {
@@ -1371,6 +1416,9 @@ fn parse_reply(response: &Value) -> Result<String, String> {
     }
     if text.eq_ignore_ascii_case("SCROLLED_UP") {
         return Err(SCROLLED_UP.to_string());
+    }
+    if text.eq_ignore_ascii_case("OPEN_PHOTO") {
+        return Err(OPEN_PHOTO.to_string());
     }
     let (extracted_text, maybe_coords) = extract_input_box(text);
     if let Some(coords) = maybe_coords {
@@ -2080,6 +2128,14 @@ fn draft_with_fallback_options(
             }
             Err(e) if e == SCROLLED_UP => {
                 info!("{} found the chat scrolled up", attempt.name);
+                return Err(e);
+            }
+            Err(e) if e == OPEN_PHOTO => {
+                info!(
+                    "{} found a blurred photo, asking the user to open it",
+                    attempt.name
+                );
+                set_open_photo_asked(true);
                 return Err(e);
             }
             Err(e) => {
@@ -2836,6 +2892,42 @@ mod tests {
         ] {
             assert!(!instructions().contains(example), "{example}");
         }
+    }
+
+    #[test]
+    fn a_blurred_photo_asks_the_user_to_open_it_once() {
+        let response = json!({ "choices": [{ "message": { "content": "OPEN_PHOTO" } }] });
+        assert_eq!(parse_reply(&response).unwrap_err(), OPEN_PHOTO);
+        assert!(instructions().contains("reply with OPEN_PHOTO only"));
+        assert!(!instructions().contains("Thank you for sharing that hot pic with me"));
+
+        let prompt_for = |photo_left_closed| {
+            let body = build_request_with_options(
+                "m",
+                1000,
+                None,
+                &ChatInput::Screenshot("AAAA".to_string()),
+                None,
+                None,
+                &PromptExtras {
+                    photo_left_closed,
+                    ..Default::default()
+                },
+            );
+            body["messages"][1]["content"][1]["text"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert!(!prompt_for(false).contains("THE USER CHOSE NOT TO OPEN THE PHOTO"));
+        assert!(prompt_for(true).contains("THE USER CHOSE NOT TO OPEN THE PHOTO"));
+
+        set_open_photo_asked(true);
+        assert!(photo_left_closed());
+        accept_draft(
+            "A typed reply clears the ask, so the next blurred photo is asked about again?",
+        );
+        assert!(!photo_left_closed());
     }
 
     #[test]
@@ -3789,7 +3881,7 @@ mod tests {
         ));
         assert!(text.contains("blurred dark-grey or skin-toned square"));
         assert!(text.contains("always acknowledge the new photo in your very first sentence"));
-        assert!(text.contains("thank them for sharing it"));
+        assert!(text.contains("react to what it actually shows"));
         assert!(text.contains("when profile cards are cropped off the screen"));
         assert!(text.contains("give me a call"));
         assert!(text.contains("I cannot make it to your place"));
@@ -3852,7 +3944,7 @@ mod tests {
         assert!(text.contains("treat it as a text-only message"));
         assert!(text.contains("Do not refer to it as \"a huge code\""));
         assert!(text.contains("do not explicitly call it a \"dick pic\""));
-        assert!(text.contains("Thank you for sharing that hot pic with me"));
+        assert!(text.contains("Never give generic thanks"));
     }
 
     #[test]
