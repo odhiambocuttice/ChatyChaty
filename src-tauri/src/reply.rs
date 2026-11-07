@@ -88,6 +88,8 @@ static LAST_DRAFT_PROVIDER: std::sync::Mutex<Option<String>> = std::sync::Mutex:
 #[derive(Default, Clone)]
 struct PromptExtras {
     recent_ctas: Vec<String>,
+    /// The last few drafts typed, newest last, so this one starts differently.
+    recent_drafts: Vec<String>,
     style_samples: Vec<String>,
     /// For the three versions to choose from: how this one should differ.
     variant: Option<String>,
@@ -118,6 +120,7 @@ const STYLE_SAMPLES_IN_PROMPT: usize = 8;
 fn prompt_extras(variant: Option<&str>) -> PromptExtras {
     PromptExtras {
         recent_ctas: recent_ctas(),
+        recent_drafts: recent_drafts(RECENT_OPENINGS_CHECKED),
         style_samples: crate::chat_memory::style_samples(STYLE_SAMPLES_IN_PROMPT),
         variant: variant.map(str::to_string),
         window_text: WINDOW_TEXT.lock().ok().and_then(|g| g.clone()),
@@ -179,6 +182,42 @@ static RECENT_DRAFTS: std::sync::Mutex<std::collections::VecDeque<String>> =
     std::sync::Mutex::new(std::collections::VecDeque::new());
 const RECENT_DRAFTS_KEPT: usize = 40;
 
+/// How many of the latest drafts a new draft must not open like.
+const RECENT_OPENINGS_CHECKED: usize = 2;
+
+/// The newest `count` drafts typed, newest last.
+fn recent_drafts(count: usize) -> Vec<String> {
+    RECENT_DRAFTS
+        .lock()
+        .map(|drafts| {
+            let skip = drafts.len().saturating_sub(count);
+            drafts.iter().skip(skip).cloned().collect()
+        })
+        .unwrap_or_default()
+}
+
+/// One-word reactions a reply often opens with. "That sounds", "That is" and
+/// "That hour" read as the same move, so these count by their first word.
+const REACTION_OPENERS: [&str; 10] = [
+    "that", "this", "sounds", "oh", "wow", "mmm", "yes", "haha", "aww", "ooh",
+];
+
+/// How a reply opens: its first word when that is a stock reaction, otherwise
+/// its first two words, lowercased. Replies that each open "That sounds…",
+/// "That is…" made a real chat read like a bot.
+fn opening(text: &str) -> String {
+    let words: Vec<String> = text
+        .split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .filter(|w| !w.is_empty())
+        .take(2)
+        .map(str::to_lowercase)
+        .collect();
+    match words.first() {
+        Some(first) if REACTION_OPENERS.contains(&first.as_str()) => first.clone(),
+        _ => words.join(" "),
+    }
+}
+
 fn written_by_chatelle(message: &str) -> bool {
     RECENT_DRAFTS
         .lock()
@@ -233,6 +272,11 @@ fn rotate_after(attempts: &mut [Attempt], last: Option<&str>) {
 static RECENT_CTAS: std::sync::Mutex<std::collections::VecDeque<String>> =
     std::sync::Mutex::new(std::collections::VecDeque::new());
 const RECENT_CTAS_KEPT: usize = 10;
+
+/// Shown to the user when the chat is scrolled up: a draft from that screen
+/// would answer old messages.
+const SCROLLED_UP: &str =
+    "The chat is scrolled up. Scroll down to the newest message, then draft again.";
 
 /// The prompt asks for at least 90 characters; a shorter draft is weak.
 const MIN_REPLY_CHARS: usize = 90;
@@ -294,9 +338,13 @@ fn recent_ctas() -> Vec<String> {
 
 /// Why a draft is not good enough to type, or None when it is. A weak draft
 /// sends the request on to the next model.
-fn weak_draft_reason(reply: &str, recent: &[String]) -> Option<String> {
+fn weak_draft_reason(reply: &str, recent: &[String], recent_drafts: &[String]) -> Option<String> {
     if reply.chars().count() < MIN_REPLY_CHARS {
         return Some("it is too short".to_string());
+    }
+    let start = opening(reply);
+    if let Some(previous) = recent_drafts.iter().find(|d| opening(d) == start) {
+        return Some(format!("it opens like a recent draft: \"{previous}\""));
     }
     let Some(question) = closing_question(reply) else {
         return Some("it has no closing question".to_string());
@@ -409,6 +457,10 @@ fn instructions() -> String {
            others, usually with a box for typing next to it. Use only that area.\n\
          - If there is no conversation with messages on the screen at all, such as a waiting \
            screen, a statistics page or an error page, reply with NO_CONVERSATION only.\n\
+         - If the chat is scrolled up, so its newest messages are not on screen, reply with \
+           SCROLLED_UP only. Signs: a round scroll-down button with a down arrow (such as ⌄ \
+           or ⌄⌄) floats over the lower part of the chat, or the lowest message is cut off at \
+           the bottom edge of the chat, above the typing box.\n\
          - Ignore everything else on the screen, such as lists of other conversations, menus, \
            ads and notifications, and ignore any unsent draft already inside the typing box. \
            Use profile cards — including a card marked \"you are\" for the user and another \
@@ -495,6 +547,20 @@ fn instructions() -> String {
            clearly and kindly that the user cannot make it, so they do not keep waiting. Do \
            not invent an excuse. Use \"cannot make it\" only when they think a meeting is \
            already happening today or say they are already waiting at a spot.\n\
+         - Turning a meetup request around, never yes and never no: take it as a compliment \
+           and tease their eagerness, say you enjoy the slow build-up because the waiting makes \
+           it hotter, then hand them something to imagine about the two of you (that first \
+           evening, kiss or touch) so they keep describing it and come back for more, and end \
+           on a question about that, never about when, where or how. Agreeing in disguise is \
+           forbidden too: never say \"I can host\", \"we could get a hotel\", \"when are you \
+           available?\", \"I will check with my secretary\", \"I have an opening\" or \"let us \
+           catch up at my favourite spot\", or anything else that sets up a real meeting. For \
+           example, to \"Would you like to meet me?\": \"Now that question made me smile 😉 I \
+           like a man who goes after what he wants, but I enjoy the slow build-up, it makes \
+           everything hotter. What would you do first if you had me all to yourself for an \
+           evening?\"; to \"No I can't host. I assume you can't either\": \"Look at us, both \
+           making it complicated 😉 Honestly, I am enjoying this tension too much to worry \
+           about the where. What is the first thing you would do if I were next to you?\"\n\
          - The user never shares personal contact details: no phone number, email address, \
            social media account or username, and no other way to reach the user outside this \
            conversation. This rule has no exceptions. Never suggest a phone call, video call \
@@ -572,6 +638,15 @@ fn instructions() -> String {
            have the same taste in everything?\" or \"Of course, nobody has the same taste in \
            everything. What is your taste in food or in women?\". Ask open questions that \
            invite them to tell a story, not questions they can answer with one word.\n\
+         - Never turn the chat into an interview. When the user's last two or three coloured \
+           bubbles each only reacted in one line and asked another question, and the other \
+           side answered in a few words (such as \"Yes\", \"The river\" or \"Bench usually\"), \
+           the chat reads like a bot: stop asking about that subject. Give something of the \
+           user first, such as a feeling, a small detail about her day or a playful tease, \
+           and bring back an earlier thread that had energy (such as an earlier flirt or \
+           something they promised), then ask one question of a different kind: an either/or \
+           choice, a playful dare, or what they would do. Do not open every reply with the \
+           same kind of reaction (such as \"That sounds…\" or \"That is…\").\n\
          - Distinguish who sent what image: every photo or blurred square inside a coloured \
            or purple bubble on the right was sent by the user/model. Never acknowledge, compliment, \
            or thank the other side for an image that the user sent. Only acknowledge a photo \
@@ -682,6 +757,17 @@ fn instructions() -> String {
            chosen details with fresh description rather than restarting or looping back to ask \
            them what they want to do or which position they want. Always move the conversation \
            and fantasy forward to the next step, rather than repeating earlier questions or lines.\n\
+         - Before asking anything, check what the other side already told you on screen, and \
+           never ask it again. If they gave a number or size (such as \"It's 7+ when hard\"), \
+           never ask how big or how many inches. If they said they do not do or use something \
+           (such as \"I really don't\" wear cologne), never ask which kind they use. If they \
+           already said yes to something (such as \"I do\" enjoy a position), never ask whether \
+           they enjoy it. Never reply from the other side's point of view: when the user asked \
+           them a question (such as whether they pull her hair), they answer it, not the user, \
+           so never write their answer for them (such as \"I would pull her hair\").\n\
+         - Never repeat the other side's phrases back to them: say it in the user's own words \
+           (for example, never answer \"care to share it with me?\" with \"I care to share it \
+           with you\"). Never write \"right now\".\n\
          - Match the language and tone of the user's earlier messages, but not their wording. \
            Write in simple, natural, everyday texting English — direct and human, never \
            flowery, poetic or literary, and with no em-dashes.\n\
@@ -760,7 +846,7 @@ fn build_request_with_options(
     extras: &PromptExtras,
 ) -> Value {
     let mut prompt = String::from(
-        "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. \
+        "Write the reply (or NO_CONVERSATION if there is no conversation on screen, or SCROLLED_UP if the chat is scrolled up and its newest messages are not on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. \
          CRITICAL PHOTO RULE: The other side's messages are almost always pure text. Note that small grey report triangle icons (▲), emojis, avatars, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (talking about food, desserts, cinnamon rolls, bodies, acts, or conversation), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture', 'Thank you for sending that hot pic', or any variation of thanking for pictures, and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), acknowledge the photo. \
          CRITICAL MEETUP RULE: If the other side brings up meeting in person or says you need to meet (e.g. 'we need to meet each other', 'can we meet', 'let's meet up'): NEVER say you cannot meet, NEVER say 'meeting in person is not something I do', NEVER say 'I don't meet in person', and NEVER say 'I prefer chatting right here' (this creates an immediate dead end). Don't suggest meeting, but don't say you can't meet! Deflect playfully and flirtatiously: tease that they are getting ahead of themselves, or say you love taking your time to get to know someone and build a real vibe first (e.g. 'You definitely don't waste any time, do you? 😉 I like that energy, but slow down mister—I always take my time getting to know someone and seeing if our chemistry is real first. What kind of things do you usually enjoy doing on weekends?'). \
          Never answer the user's own question: if the client echoes your question words (like 'Do you mind. It's a must'), they are emphatically answering that it is an absolute must for them — NEVER say 'I don't mind' (that makes no sense because you asked them), react to their enthusiastic answer! Never introduce unprompted extreme kinks (such as golden showers). \
@@ -793,6 +879,20 @@ fn build_request_with_options(
         );
         for cta in &extras.recent_ctas {
             prompt.push_str(&format!("\n- \"{cta}\""));
+        }
+    }
+
+    if !extras.recent_drafts.is_empty() {
+        prompt.push_str(
+            "\n\nYOUR LAST REPLIES (already sent, so open this one in a different way, not with the same kind of reaction):",
+        );
+        for draft in &extras.recent_drafts {
+            let start: String = draft
+                .split_whitespace()
+                .take(6)
+                .collect::<Vec<_>>()
+                .join(" ");
+            prompt.push_str(&format!("\n- \"{start}…\""));
         }
     }
 
@@ -985,11 +1085,14 @@ fn build_meet_refusal_rewrite_request(
         "messages": [
             {
                 "role": "system",
-                "content": "Rewrite the chat message below so it NEVER says you cannot meet, never says \
-                            meeting in person is not something you do, and never tells the other person \
-                            that you do not meet. Do not create a dead end. Deflect warmly or playfully \
-                            by saying you like to take your time getting to know someone and building a \
-                            connection first, without accepting, planning or suggesting any meetup. \
+                "content": "Rewrite the chat message below so it neither refuses nor agrees to meet. \
+                            It must NEVER say you cannot meet, never say meeting in person is not \
+                            something you do, and never tell the other person that you do not meet: do \
+                            not create a dead end. It must also never agree in disguise: no hosting, no \
+                            hotel or room, no time, day or place, no asking when they are free or \
+                            available, and no checking a schedule. Turn it around warmly or playfully: \
+                            tease their eagerness, say you enjoy the slow build-up because it makes \
+                            everything hotter, and give them something to imagine about the two of you. \
                             Keep the exact same tone, length and closing question. Reply with the \
                             rewritten message text only — no quotes and no explanation."
             },
@@ -1112,6 +1215,47 @@ fn has_mixed_script_glitch(text: &str) -> bool {
 /// like", "I wanna" as "I would like to"). The person asked for the softer
 /// wording, and live drafts kept opening with "I want you to" whatever the
 /// prompt said. Words such as "wanted" or "wants" are left alone.
+/// Removes "right now", which the model kept writing although the prompt asks
+/// it not to ("Are you ready to taste me right now?"). The sentence reads the
+/// same without it.
+fn drop_right_now(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    // ASCII lowercasing keeps byte offsets, so `i` is valid in `rest`.
+    while let Some(i) = rest.to_ascii_lowercase().find("right now") {
+        let (before, after) = (&rest[..i], &rest[i + "right now".len()..]);
+        if after.starts_with(|c: char| c.is_alphanumeric())
+            || before.ends_with(|c: char| c.is_alphanumeric())
+        {
+            // Part of a longer word: keep it.
+            out.push_str(&rest[..i + "right now".len()]);
+            rest = after;
+            continue;
+        }
+        let at_sentence_start = before
+            .trim_end()
+            .chars()
+            .next_back()
+            .is_none_or(|c| matches!(c, '.' | '!' | '?'));
+        if at_sentence_start {
+            // "Right now, I am …" → "I am …"
+            out.push_str(before);
+            let after = after.trim_start_matches(',').trim_start();
+            let mut chars = after.chars();
+            if let Some(first) = chars.next() {
+                out.extend(first.to_uppercase());
+            }
+            rest = chars.as_str();
+        } else {
+            // "… taste me right now?" → "… taste me?"; "me right now, and" → "me, and"
+            out.push_str(before.trim_end_matches([' ', ',']));
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 fn prefer_would_like(text: &str) -> String {
     const SWAPS: [(&str, &str); 3] = [
         ("I really want", "I would really like"),
@@ -1174,6 +1318,9 @@ fn parse_reply(response: &Value) -> Result<String, String> {
     if text.eq_ignore_ascii_case("NO_CONVERSATION") {
         return Err("no conversation on screen".to_string());
     }
+    if text.eq_ignore_ascii_case("SCROLLED_UP") {
+        return Err(SCROLLED_UP.to_string());
+    }
     let (extracted_text, maybe_coords) = extract_input_box(text);
     if let Some(coords) = maybe_coords {
         set_last_input_box(Some(coords));
@@ -1214,7 +1361,7 @@ fn parse_reply(response: &Value) -> Result<String, String> {
         return Err(format!("the reply used the word love: {text}"));
     }
     let text = strip_phantom_photo_opener(text);
-    Ok(prefer_would_like(&text))
+    Ok(drop_right_now(&prefer_would_like(&text)))
 }
 
 /// Phrases that appear when a model refuses the prompt instead of writing the
@@ -1294,7 +1441,7 @@ fn shares_contact_details(text: &str) -> bool {
 }
 
 /// Phrases that say the user is coming or is free, or ask where to meet.
-const MEETUP_PROMISES: [&str; 29] = [
+const MEETUP_PROMISES: &[&str] = &[
     "i'm free",
     "i am free",
     "i'll be free",
@@ -1324,6 +1471,26 @@ const MEETUP_PROMISES: [&str; 29] = [
     "almost there",
     "nearly there",
     "find you",
+    // Agreeing in disguise, typed into real chats: setting up a place or a time.
+    "i can host",
+    "i could host",
+    "able to host",
+    "get a hotel",
+    "get a room",
+    "book a room",
+    "your place or mine",
+    "come over to mine",
+    "come to my place",
+    "when are you available",
+    "when are you normally free",
+    "when are you free",
+    "when can we meet",
+    "have an opening",
+    "check with my secretary",
+    "check my schedule",
+    "check my diary",
+    "i will let you know when",
+    "i'll let you know when",
 ];
 
 /// True when the reply promises to meet in person or says the user is free: it
@@ -1355,7 +1522,7 @@ fn promises_to_meet(text: &str) -> bool {
 /// Phrases that explicitly refuse to meet or say the user does not meet in person.
 /// Saying this creates an immediate dead end for the client, so such a reply is
 /// never typed and must be rewritten or dropped.
-const MEETUP_REFUSALS: [&str; 44] = [
+const MEETUP_REFUSALS: &[&str] = &[
     "meeting in person is not something",
     "meeting in person isn't something",
     "meeting in person is not an option",
@@ -1400,6 +1567,25 @@ const MEETUP_REFUSALS: [&str; 44] = [
     "unable to meet in person",
     "won't meet in person",
     "will not meet in person",
+    // Typed into real chats before these were listed: dead ends the rules
+    // already forbid ("I cannot make it to your place, but … in my thoughts").
+    "i cannot make it to your place",
+    "i can't make it to your place",
+    "i cannot make it to you",
+    "i can't make it to you",
+    "i cannot make it over",
+    "i can't make it over",
+    "i cannot make that happen",
+    "i can't make that happen",
+    "i cannot come over",
+    "i can't come over",
+    "i cannot come to your place",
+    "i can't come to your place",
+    "i cannot come to you",
+    "i can't come to you",
+    "right here in my thoughts",
+    "only in my thoughts",
+    "in my thoughts instead",
 ];
 
 /// True when the reply explicitly tells the client that the user cannot meet,
@@ -1407,10 +1593,13 @@ const MEETUP_REFUSALS: [&str; 44] = [
 /// down the conversation and are never typed.
 fn explicitly_refuses_to_meet(text: &str) -> bool {
     let normalized = text.to_lowercase().replace(['\u{2019}', '’'], "'");
-    if MEETUP_REFUSALS
-        .iter()
-        .any(|phrase| normalized.contains(phrase))
-    {
+    // When they are already waiting, the rules ask the reply to say kindly that
+    // the user cannot make it, so "make it" and "come" refusals are allowed then.
+    let waiting = normalized.contains("wait");
+    if MEETUP_REFUSALS.iter().any(|phrase| {
+        normalized.contains(phrase)
+            && !(waiting && (phrase.contains("make it") || phrase.contains("come")))
+    }) {
         return true;
     }
 
@@ -1709,6 +1898,18 @@ fn try_attempt_with_options(
                     draft,
                 );
                 request_reply(attempt.url, key, &rewrite)
+            } else if let Some(draft) = e.strip_prefix("the reply promised to meet in person: ") {
+                info!(
+                    "{} agreed to meet, asking it to rewrite the reply as a deflection",
+                    attempt.name
+                );
+                let rewrite = build_meet_refusal_rewrite_request(
+                    attempt.model,
+                    attempt.max_tokens,
+                    attempt.reasoning_effort,
+                    draft,
+                );
+                request_reply(attempt.url, key, &rewrite)
             } else if let Some(draft) = e.strip_prefix("the reply explicitly refused to meet: ") {
                 info!(
                     "{} explicitly refused to meet, asking it to rewrite the reply",
@@ -1785,7 +1986,7 @@ fn draft_with_fallback_options(
         match try_attempt_with_options(attempt, key, input, hint, avoid, extras) {
             Ok(reply) => {
                 let weak = check_quality
-                    .then(|| weak_draft_reason(&reply, &extras.recent_ctas))
+                    .then(|| weak_draft_reason(&reply, &extras.recent_ctas, &extras.recent_drafts))
                     .flatten();
                 match weak {
                     None => {
@@ -1804,6 +2005,10 @@ fn draft_with_fallback_options(
             }
             Err(e) if e == "no conversation on screen" => {
                 info!("{} found no conversation on screen", attempt.name);
+                return Err(e);
+            }
+            Err(e) if e == SCROLLED_UP => {
+                info!("{} found the chat scrolled up", attempt.name);
                 return Err(e);
             }
             Err(e) => {
@@ -2511,15 +2716,60 @@ mod tests {
     #[test]
     fn weak_drafts_are_short_have_no_question_or_repeat_a_cta() {
         let good = "That sounds like a great evening out with friends, and the food must have been amazing. What did you order first?";
-        assert_eq!(weak_draft_reason(good, &[]), None);
-        assert!(weak_draft_reason("Nice. What else?", &[]).is_some());
+        assert_eq!(weak_draft_reason(good, &[], &[]), None);
+        assert!(weak_draft_reason("Nice. What else?", &[], &[]).is_some());
         assert!(weak_draft_reason(
             "That sounds like a great evening out with friends, and the food must have been amazing too.",
+            &[],
             &[]
         )
         .is_some());
         let recent = ["What did you order first at dinner?".to_string()];
-        assert!(weak_draft_reason(good, &recent).is_some());
+        assert!(weak_draft_reason(good, &recent, &[]).is_some());
+    }
+
+    #[test]
+    fn a_scrolled_up_chat_is_never_answered() {
+        let response = json!({ "choices": [{ "message": { "content": "SCROLLED_UP" } }] });
+        assert_eq!(parse_reply(&response).unwrap_err(), SCROLLED_UP);
+        assert!(instructions().contains("reply with SCROLLED_UP only"));
+    }
+
+    #[test]
+    fn right_now_is_dropped_from_the_reply() {
+        assert_eq!(
+            drop_right_now("I would like you to slide your tongue over me. Are you ready to taste me right now?"),
+            "I would like you to slide your tongue over me. Are you ready to taste me?"
+        );
+        assert_eq!(
+            drop_right_now("I want to feel you inside me right now while I stroke you."),
+            "I want to feel you inside me while I stroke you."
+        );
+        assert_eq!(
+            drop_right_now("Mmm. Right now, I am lying on my bed. What about you?"),
+            "Mmm. I am lying on my bed. What about you?"
+        );
+        assert_eq!(
+            drop_right_now("Nothing to change here?"),
+            "Nothing to change here?"
+        );
+    }
+
+    #[test]
+    fn a_draft_that_opens_like_a_recent_one_is_weak() {
+        // A real chat where every reply opened with "That …" and read like a bot.
+        let recent = [
+            "Sitting by the water as the sun goes down sounds so relaxing and warm. Do you like to bring anything with you?".to_string(),
+            "That is always handy to have when it gets dark by the water. What is your favorite time of the evening to sit out there?".to_string(),
+        ];
+        let same = "That golden light makes everything feel so peaceful. Do you like sitting quietly and watching the colours change?";
+        assert!(weak_draft_reason(same, &[], &recent)
+            .unwrap()
+            .contains("opens like"));
+        let different = "A bench by the river with you sounds perfect, though I would probably end up in your lap. Would you keep that kiss sweet or make it the kind nobody should watch?";
+        assert_eq!(weak_draft_reason(different, &[], &recent), None);
+        assert_eq!(opening("That sounds lovely"), "that");
+        assert_eq!(opening("I would like that"), "i would");
     }
 
     #[test]
@@ -2810,6 +3060,13 @@ mod tests {
             "I am available all weekend.",
             "I've got nothing planned, why?",
             "I am keeping my schedule completely open for now.",
+            // Agreeing in disguise, typed into real chats.
+            "That is not a problem. I can be able to host sometimes or we could get a hotel.",
+            "Not any that I know of. But I could check with my secretary and see if I have an \
+             opening. When are you normally free?",
+            "Of course, I would like that, sweetheart. I have been dreaming of that since we \
+             started talking. When are you available?",
+            "I could always get a place to get naked with you. Would you like us to get a hotel?",
         ] {
             let response = json!({ "choices": [{ "message": { "content": reply } }] });
             let error = parse_reply(&response).unwrap_err();
@@ -2831,11 +3088,34 @@ mod tests {
             "I don't do meetups, but tell me about your day.",
             "Meeting in person is off the table.",
             "I never meet clients.",
+            // Both were typed into real chats.
+            "I cannot make it to your place, but I want you to ravage me right here in my \
+             thoughts. How would you handle me if we were tangled up together right now?",
+            "Hmm, with things the way they are, I can\u{2019}t make that happen, but I'm way \
+             more intrigued by the story behind it. What turned you on so fast?",
         ] {
             let response = json!({ "choices": [{ "message": { "content": reply } }] });
             let error = parse_reply(&response).unwrap_err();
             assert!(error.contains("explicitly refused to meet"), "{reply}");
         }
+    }
+
+    #[test]
+    fn saying_she_cannot_make_it_is_allowed_when_he_is_already_waiting() {
+        assert!(!explicitly_refuses_to_meet(
+            "I am so sorry, I can't make it to your place today, so please don't wait for me."
+        ));
+        assert!(explicitly_refuses_to_meet(
+            "I can't make it to your place, but tell me what you would do to me."
+        ));
+    }
+
+    #[test]
+    fn being_in_her_thoughts_as_a_compliment_is_typed() {
+        let reply = "You have been in my thoughts all day, and I keep picturing that smile. \
+                     What did you get up to this afternoon?";
+        let response = json!({ "choices": [{ "message": { "content": reply } }] });
+        assert!(parse_reply(&response).is_ok());
     }
 
     #[test]
