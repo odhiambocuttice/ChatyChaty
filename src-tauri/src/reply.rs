@@ -364,23 +364,49 @@ fn stock_phrase(text: &str) -> Option<&'static str> {
     STOCK_PHRASES.iter().copied().find(|p| lower.contains(p))
 }
 
-/// Ways to give the user's first name in a new chat. One is picked per draft so
-/// the name is not given with the same "I'm Celina, by the way." in every chat.
-const NAME_INTRO_STYLES: &[&str] = &[
-    "weave the first name into the middle of a sentence that reacts to what they wrote (such as \"... and you can call me [first name]\")",
-    "give the first name as a playful aside after your first sentence (such as \"[first name] here, and ...\")",
-    "give the first name as a quick aside (such as \"I'm [first name], by the way\")",
-    "open with the first name on its own, then react to what they wrote (such as \"[first name]. And ...\")",
-    "give the first name right before your closing question (such as \"[first name] wants to know ...\")",
-    "tie the first name to something they said (such as \"Someone with your taste gets to call me [first name] ...\")",
-];
-
-/// Which way to give the name next, rotating per draft.
-static NAME_INTRO_TURN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-fn next_name_intro_style() -> &'static str {
-    let turn = NAME_INTRO_TURN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    NAME_INTRO_STYLES[turn % NAME_INTRO_STYLES.len()]
+/// The sentence in which a reply gives a first name ("I'm Celina, by the
+/// way"), lowercased with the name replaced, so two replies that give
+/// different names the same way compare equal. Every first reply once gave
+/// the name with the very same line.
+fn name_intro(text: &str) -> Option<String> {
+    const BEFORE_NAME: [&str; 5] = ["i'm ", "i am ", "call me ", "name is ", "it's "];
+    let text = text.replace('\u{2019}', "'");
+    text.split_inclusive(['.', '!', '?'])
+        .map(str::trim)
+        .find_map(|sentence| {
+            let words: Vec<&str> = sentence.split_whitespace().collect();
+            let name_at = words.iter().enumerate().position(|(i, w)| {
+                let is_name = w.chars().next().is_some_and(char::is_uppercase)
+                    && w.trim_matches(|c: char| !c.is_alphanumeric())
+                        .chars()
+                        .count()
+                        > 1
+                    && w.trim_matches(|c: char| !c.is_alphanumeric()) != "I";
+                let after_phrase = i > 0
+                    && BEFORE_NAME.iter().any(|b| {
+                        let before = words[..i].join(" ").to_lowercase();
+                        before.ends_with(b.trim_end())
+                    });
+                let before_here = words
+                    .get(i + 1)
+                    .is_some_and(|n| n.to_lowercase().starts_with("here"));
+                is_name && (after_phrase || before_here)
+            })?;
+            let mut out = words
+                .iter()
+                .enumerate()
+                .map(|(i, w)| {
+                    if i == name_at {
+                        "[name]".to_string()
+                    } else {
+                        w.to_lowercase()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            out.retain(|c| c.is_alphanumeric() || c == ' ' || c == '[' || c == ']' || c == '\'');
+            Some(out)
+        })
 }
 
 /// Which built-in fallback line to use next, so the same one is not typed in
@@ -503,6 +529,16 @@ fn weak_draft_reason(reply: &str, recent: &[String], recent_drafts: &[String]) -
     let start = opening(reply);
     if let Some(previous) = recent_drafts.iter().find(|d| opening(d) == start) {
         return Some(format!("it opens like a recent draft: \"{previous}\""));
+    }
+    if let Some(intro) = name_intro(reply) {
+        if let Some(previous) = recent_drafts
+            .iter()
+            .find(|d| name_intro(d).as_deref() == Some(intro.as_str()))
+        {
+            return Some(format!(
+                "it gives the name like a recent draft: \"{previous}\""
+            ));
+        }
     }
     let Some(question) = closing_question(reply) else {
         // A tempting statement may end a reply instead of a question, but
@@ -1142,13 +1178,16 @@ fn build_request_with_options(
     }
 
     match extras.chat_stage {
-        Some(crate::screen_text::ChatStage::New) => prompt.push_str(&format!(
+        Some(crate::screen_text::ChatStage::New) => prompt.push_str(
             "\n\nNEW CHAT: the start of this chat is on screen. If none of the user's coloured \
-             bubbles has given the user's first name yet, give it in this reply: {}. Then \
-             reply to what they wrote. Take the first name from the line under the username \
-             on the user's \"you are\" profile card, never the username itself.",
-            next_name_intro_style()
-        )),
+             bubbles has given the user's first name yet, give it in this reply the way an \
+             ordinary person does in a chat, in whatever wording fits what they wrote: worked \
+             into a sentence, as a quick aside, right before your question, or however it \
+             comes naturally. Never use a fixed formula, and never give it the same way as \
+             in any of YOUR LAST REPLIES below. Then reply to what they wrote. Take the first \
+             name from the line under the username on the user's \"you are\" profile card, \
+             never the username itself.",
+        ),
         Some(crate::screen_text::ChatStage::Ongoing) => prompt.push_str(
             "\n\nONGOING CHAT: this chat started earlier and older messages are scrolled away. \
              Do not introduce yourself or give your name unless their latest message asks for it.",
@@ -3033,15 +3072,44 @@ mod tests {
     }
 
     #[test]
-    fn a_new_chat_gives_the_name_a_different_way_each_draft() {
-        let mut seen = std::collections::HashSet::new();
-        for _ in 0..NAME_INTRO_STYLES.len() {
-            seen.insert(next_name_intro_style());
-        }
-        assert_eq!(seen.len(), NAME_INTRO_STYLES.len());
-        for style in NAME_INTRO_STYLES {
-            assert!(style.contains("[first name]"), "{style}");
-        }
+    fn a_draft_that_gives_the_name_like_a_recent_one_is_weak() {
+        let celina = "I'd really enjoy taking my time getting to know you and building up all \
+             that delicious anticipation. I'm Celina, by the way. How long do you think you can \
+             last once you feel me around you?";
+        let josh = "Mmm, that image is going to stay with me all evening. I'm Josh, by the way. \
+             What would you do first if I were there right now?";
+        assert_eq!(name_intro(celina).as_deref(), Some("i'm [name] by the way"));
+        assert_eq!(name_intro(josh), name_intro(celina));
+        assert_eq!(
+            name_intro("Someone with your taste gets to call me Hillary, and I want to hear more.")
+                .as_deref(),
+            Some("someone with your taste gets to call me [name] and i want to hear more")
+        );
+        assert_eq!(
+            name_intro("Kiana here, and you just made my evening.").as_deref(),
+            Some("[name] here and you just made my evening")
+        );
+        assert_eq!(
+            name_intro("I'm so glad you wrote. What are you up to?"),
+            None
+        );
+        assert_eq!(
+            name_intro("It's late here and I am still thinking about you. Tell me more?"),
+            None
+        );
+
+        let reason = weak_draft_reason(josh, &[], &[celina.to_string()]).unwrap();
+        assert!(
+            reason.starts_with("it gives the name like a recent draft"),
+            "{reason}"
+        );
+        let different =
+            "Mmm, that image is going to stay with me all evening, and you can call me \
+             Josh. What would you do first if I were there right now?";
+        assert_eq!(
+            weak_draft_reason(different, &[], &[celina.to_string()]),
+            None
+        );
     }
 
     #[test]
