@@ -146,6 +146,34 @@ pub fn transcript(lines: &[Line]) -> Option<String> {
 pub struct ChatRead {
     pub transcript: Option<String>,
     pub input_box: Option<(f64, f64, f64, f64)>,
+    pub stage: Option<ChatStage>,
+}
+
+/// Whether the chat on screen is new or already going.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatStage {
+    /// The chat's start is on screen: its "THE CHAT STARTED" divider, or the
+    /// "POKE" label on the opening message.
+    New,
+    /// Older messages are scrolled away: the chat site pins a "Started at …
+    /// — 2 months ago" label at the top of the chat.
+    Ongoing,
+}
+
+/// Reads the chat site's markers in the text on screen. The divider wins over
+/// the pinned label, because the divider shows only when the chat's start is
+/// on screen. None when no marker was read; the model then judges itself.
+pub fn chat_stage(text: &str) -> Option<ChatStage> {
+    let lines: Vec<String> = text.lines().map(|l| l.trim().to_lowercase()).collect();
+    if lines.iter().any(|l| l.contains("the chat started")) {
+        Some(ChatStage::New)
+    } else if lines.iter().any(|l| l.contains("started at")) {
+        Some(ChatStage::Ongoing)
+    } else if lines.iter().any(|l| l == "poke") {
+        Some(ChatStage::New)
+    } else {
+        None
+    }
 }
 
 /// Placeholders chat apps show in an empty message box.
@@ -178,10 +206,23 @@ pub fn input_box(lines: &[Line]) -> Option<(f64, f64, f64, f64)> {
 /// no usable text (or no text recognition on this platform).
 pub fn read_chat(jpeg: &[u8]) -> ChatRead {
     match recognize(jpeg) {
-        Ok(lines) => ChatRead {
-            transcript: transcript(&lines),
-            input_box: input_box(&lines),
-        },
+        Ok(lines) => {
+            let transcript = transcript(&lines);
+            let text = lines
+                .iter()
+                .map(|l| l.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            // The pinned "Started at" label is usually cut in half at the top
+            // and not read, while the full-width divider of a new chat is.
+            // So a chat read without the divider is taken as ongoing.
+            let stage = chat_stage(&text).or(transcript.is_some().then_some(ChatStage::Ongoing));
+            ChatRead {
+                transcript,
+                input_box: input_box(&lines),
+                stage,
+            }
+        }
         Err(e) => {
             log::debug!("Reading the screenshot as text failed: {e}");
             ChatRead::default()
@@ -228,6 +269,26 @@ mod tests {
         let chat = read_chat(&jpeg);
         println!("{}", chat.transcript.expect("no text read"));
         println!("input box: {:?}", chat.input_box);
+        println!("stage: {:?}", chat.stage);
+    }
+
+    #[test]
+    fn reads_the_chat_stage_from_the_sites_markers() {
+        // The new chat in a real screenshot: the divider, then the opener.
+        assert_eq!(
+            chat_stage("THE CHAT STARTED\n00:10 — 21 minutes ago\nPOKE\nDAMN! I should be in bed."),
+            Some(ChatStage::New)
+        );
+        assert_eq!(
+            chat_stage("POKE\nAre you single?\nI maynot be lol"),
+            Some(ChatStage::New)
+        );
+        // An ongoing chat: the label pinned at the top.
+        assert_eq!(
+            chat_stage("Started at 21:02 18-Jun-2026 — a month ago\nNo i can't unfortunately."),
+            Some(ChatStage::Ongoing)
+        );
+        assert_eq!(chat_stage("Hey darling\nWhat have you been doing?"), None);
     }
 
     #[test]

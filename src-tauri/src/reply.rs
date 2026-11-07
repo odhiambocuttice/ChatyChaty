@@ -96,6 +96,9 @@ struct PromptExtras {
     /// A change the user asked for from the picker's tone buttons, applied to
     /// every version, with the replies it changes.
     tone: Option<String>,
+    /// Whether the chat is new or already going, read from the chat site's
+    /// markers on screen (`screen_text::chat_stage`). None when not read.
+    chat_stage: Option<crate::screen_text::ChatStage>,
 }
 
 /// The picker's tone buttons: what each asks the model to change.
@@ -119,6 +122,7 @@ fn prompt_extras(variant: Option<&str>) -> PromptExtras {
         variant: variant.map(str::to_string),
         window_text: WINDOW_TEXT.lock().ok().and_then(|g| g.clone()),
         tone: None,
+        chat_stage: None,
     }
 }
 
@@ -509,8 +513,12 @@ fn instructions() -> String {
            other side asks for the user's name or location (for instance \"NAME, LOCATION\" \
            or \"where are you from?\"), or says they are leaving because the user never gave \
            them, give them plainly: the first name and city shown on the user's own profile \
-           card (the card marked \"you are\") or already given in the user's earlier coloured \
-           bubbles, such as \"My name is Hillary and I am from Charlotte.\" Never treat a \
+           card on the right (the card marked \"you are\") or already given in the user's earlier \
+           coloured bubbles, such as \"My name is Hillary and I am from Charlotte.\" Always read \
+           the model's first name from the right-side \"you are\" profile card: the bold pink/coloured \
+           title at the top is a username/handle (such as \"VividKindness\"), while the model's real \
+           first name is on the line immediately below it before the comma and age (such as \"Kiana\" \
+           in \"Kiana, 57\") — always use that first name, never the username/handle. Never treat a \
            TIMEZONE label (such as America/New_York) as the user's location: a timezone is \
            only a clock setting, not where the user lives. Never default to or invent New York. \
            Read the user's location from the LOCALITY field on their \"you are\" profile card \
@@ -528,7 +536,13 @@ fn instructions() -> String {
            it is the very first introductory exchange of a brand-new conversation with no prior \
            messages, or if the other side specifically asked \"What is your name?\" or \"Where \
            are you from?\". In all ongoing conversations, dive straight into replying to what \
-           they said without introducing yourself.\n\
+           they said without introducing yourself. How to tell a new chat: a \"THE CHAT \
+           STARTED\" divider above the first message, or a first message labelled \"POKE\" \
+           (an opener the user already sent), means the chat's start is on screen; then, if \
+           none of the user's coloured bubbles gave the user's first name yet, give it in \
+           this reply. A small \"Started at … — 2 months ago\" label pinned at the top of the \
+           chat means it is ongoing and older messages are scrolled away: never introduce \
+           yourself then. When you cannot tell, treat the chat as ongoing.\n\
          - Keep the other side hooked. When they say goodbye, threaten to leave, sound \
            annoyed or accuse the user of only wanting to sext or of not being real, never \
            let them go and never sulk or argue: answer whatever they felt was missing \
@@ -792,6 +806,21 @@ fn build_request_with_options(
         prompt.push_str(&format!(
             "\n\nCHANGE THE USER ASKED FOR (this overrides the length and closing-question rules above): {tone}"
         ));
+    }
+
+    match extras.chat_stage {
+        Some(crate::screen_text::ChatStage::New) => prompt.push_str(
+            "\n\nNEW CHAT: the start of this chat is on screen. If none of the user's coloured \
+             bubbles has given the user's first name yet, open this reply by giving it (for \
+             example \"I'm [first name], by the way.\"), then reply to what they wrote. Take the first \
+             name from the line under the username on the user's \"you are\" profile card, \
+             never the username itself.",
+        ),
+        Some(crate::screen_text::ChatStage::Ongoing) => prompt.push_str(
+            "\n\nONGOING CHAT: this chat started earlier and older messages are scrolled away. \
+             Do not introduce yourself or give your name unless their latest message asks for it.",
+        ),
+        None => {}
     }
 
     prompt.push_str(
@@ -2110,6 +2139,16 @@ fn draft_text_first(
     avoid: Option<&str>,
     extras: &PromptExtras,
 ) -> Result<String, String> {
+    // The chat stage, from the text read off the screenshot or, on Windows,
+    // the chat window's own text.
+    let mut extras = extras.clone();
+    extras.chat_stage = chat.stage.or_else(|| {
+        extras
+            .window_text
+            .as_deref()
+            .and_then(crate::screen_text::chat_stage)
+    });
+    let extras = &extras;
     if let Some(text) = &chat.transcript {
         let input = ChatInput::Text(text.clone());
         match draft_with_fallback_options(
@@ -2338,6 +2377,35 @@ mod tests {
         assert!(prompt.contains("I love tiramisu!"));
         assert!(prompt.contains("RECENT CLOSING QUESTIONS"));
         assert!(prompt.contains("What are you cooking tonight?"));
+    }
+
+    #[test]
+    fn the_prompt_says_whether_the_chat_is_new() {
+        use crate::screen_text::ChatStage;
+        let prompt_for = |stage| {
+            let body = build_request_with_options(
+                "m",
+                1000,
+                None,
+                &ChatInput::Screenshot("AAAA".to_string()),
+                None,
+                None,
+                &PromptExtras {
+                    chat_stage: stage,
+                    ..Default::default()
+                },
+            );
+            body["messages"][1]["content"][1]["text"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let new = prompt_for(Some(ChatStage::New));
+        assert!(new.contains("NEW CHAT") && new.contains("open this reply by giving it"));
+        let ongoing = prompt_for(Some(ChatStage::Ongoing));
+        assert!(ongoing.contains("ONGOING CHAT") && !ongoing.contains("NEW CHAT"));
+        let unknown = prompt_for(None);
+        assert!(!unknown.contains("NEW CHAT") && !unknown.contains("ONGOING CHAT"));
     }
 
     #[test]
