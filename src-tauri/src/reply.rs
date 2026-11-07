@@ -20,7 +20,8 @@ use std::time::Duration;
 const MAX_REPLY_TOKENS: u32 = 2000;
 /// Groq's free tier reserves `max_tokens` against a 1,000 output-tokens-per-minute cap.
 const GROQ_MAX_REPLY_TOKENS: u32 = 800;
-/// OpenRouter's free router picks reasoning vision models that spend ~3,000 tokens thinking.
+/// OpenRouter's free router picks reasoning vision models that spend ~3,000 tokens
+/// thinking, and with the default effort some never got to the reply ("cut off").
 const OPENROUTER_MAX_REPLY_TOKENS: u32 = 4096;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -35,6 +36,12 @@ const TIME_FOR_ANOTHER_MODEL: Duration = Duration::from_secs(10);
 /// Below this much time left, a draft that needs a rewrite is not sent back
 /// to the model; the built-in safe fix is used where there is one.
 const TIME_FOR_A_REWRITE: Duration = Duration::from_secs(6);
+
+/// Providers that answered HTTP 413 (request too large) this session: Groq's
+/// free tier takes 7,000 input tokens a minute and a draft needs about 11,000.
+static TOO_SMALL_PROVIDERS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashSet<String>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
 
 /// Time left before the draft's deadline (all of REQUEST_TIMEOUT without one).
 fn time_left(deadline: Option<std::time::Instant>) -> Duration {
@@ -364,6 +371,51 @@ fn stock_phrase(text: &str) -> Option<&'static str> {
     STOCK_PHRASES.iter().copied().find(|p| lower.contains(p))
 }
 
+/// The sentence in which a reply gives a first name ("I'm Celina, by the
+/// way"), lowercased with the name replaced, so two replies that give
+/// different names the same way compare equal. Every first reply once gave
+/// the name with the very same line.
+fn name_intro(text: &str) -> Option<String> {
+    const BEFORE_NAME: [&str; 5] = ["i'm ", "i am ", "call me ", "name is ", "it's "];
+    let text = text.replace('\u{2019}', "'");
+    text.split_inclusive(['.', '!', '?'])
+        .map(str::trim)
+        .find_map(|sentence| {
+            let words: Vec<&str> = sentence.split_whitespace().collect();
+            let name_at = words.iter().enumerate().position(|(i, w)| {
+                let is_name = w.chars().next().is_some_and(char::is_uppercase)
+                    && w.trim_matches(|c: char| !c.is_alphanumeric())
+                        .chars()
+                        .count()
+                        > 1
+                    && w.trim_matches(|c: char| !c.is_alphanumeric()) != "I";
+                let after_phrase = i > 0
+                    && BEFORE_NAME.iter().any(|b| {
+                        let before = words[..i].join(" ").to_lowercase();
+                        before.ends_with(b.trim_end())
+                    });
+                let before_here = words
+                    .get(i + 1)
+                    .is_some_and(|n| n.to_lowercase().starts_with("here"));
+                is_name && (after_phrase || before_here)
+            })?;
+            let mut out = words
+                .iter()
+                .enumerate()
+                .map(|(i, w)| {
+                    if i == name_at {
+                        "[name]".to_string()
+                    } else {
+                        w.to_lowercase()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            out.retain(|c| c.is_alphanumeric() || c == ' ' || c == '[' || c == ']' || c == '\'');
+            Some(out)
+        })
+}
+
 /// Which built-in fallback line to use next, so the same one is not typed in
 /// chat after chat (the fixed deflection became a signature line).
 static FALLBACK_TURN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -485,6 +537,16 @@ fn weak_draft_reason(reply: &str, recent: &[String], recent_drafts: &[String]) -
     if let Some(previous) = recent_drafts.iter().find(|d| opening(d) == start) {
         return Some(format!("it opens like a recent draft: \"{previous}\""));
     }
+    if let Some(intro) = name_intro(reply) {
+        if let Some(previous) = recent_drafts
+            .iter()
+            .find(|d| name_intro(d).as_deref() == Some(intro.as_str()))
+        {
+            return Some(format!(
+                "it gives the name like a recent draft: \"{previous}\""
+            ));
+        }
+    }
     let Some(question) = closing_question(reply) else {
         // A tempting statement may end a reply instead of a question, but
         // never two replies in a row.
@@ -561,7 +623,7 @@ const PROVIDERS: [Provider; 3] = [
         url: "https://openrouter.ai/api/v1/chat/completions",
         model: "openrouter/free",
         max_tokens: OPENROUTER_MAX_REPLY_TOKENS,
-        reasoning_effort: None,
+        reasoning_effort: Some("low"),
         keychain_service: "chatelle-openrouter-key",
         env_var: "OPENROUTER_API_KEY",
     },
@@ -1125,8 +1187,11 @@ fn build_request_with_options(
     match extras.chat_stage {
         Some(crate::screen_text::ChatStage::New) => prompt.push_str(
             "\n\nNEW CHAT: the start of this chat is on screen. If none of the user's coloured \
-             bubbles has given the user's first name yet, open this reply by giving it (for \
-             example \"I'm [first name], by the way.\"), then reply to what they wrote. Take the first \
+             bubbles has given the user's first name yet, give it in this reply the way an \
+             ordinary person does in a chat, in whatever wording fits what they wrote: worked \
+             into a sentence, as a quick aside, right before your question, or however it \
+             comes naturally. Never use a fixed formula, and never give it the same way as \
+             in any of YOUR LAST REPLIES below. Then reply to what they wrote. Take the first \
              name from the line under the username on the user's \"you are\" profile card, \
              never the username itself.",
         ),
@@ -1541,7 +1606,18 @@ fn parse_reply(response: &Value) -> Result<String, String> {
             return Err(format!("blocked by provider filter ({reason})"));
         }
         if matches!(lowered.as_str(), "length" | "max_tokens") {
-            return Err(format!("reply was cut off ({reason})"));
+            // A reasoning model that ran out of tokens right after finishing
+            // the reply still wrote the whole reply: keep it when it ends a
+            // sentence. Cut mid-sentence, it is never typed.
+            let content = response
+                .pointer("/choices/0/message/content")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let text = strip_thinking(content);
+            let text = text.trim();
+            if !text.ends_with(['.', '!', '?']) {
+                return Err(format!("reply was cut off ({reason})"));
+            }
         }
     }
     let content = response
@@ -2155,6 +2231,11 @@ fn request_reply(
     let status = response.status().as_u16();
     let json: Value = response.body_mut().read_json().unwrap_or(Value::Null);
     let reply = parse_reply(&json);
+    if reply.as_ref().is_err_and(|e| e == "no reply text") {
+        // Enough of the answer to tell a blocked request from an empty one.
+        let shown: String = json.to_string().chars().take(600).collect();
+        warn!("The model answered with no reply text (HTTP {status}): {shown}");
+    }
     match (status, reply) {
         (200..=299, reply) => reply,
         (status, Err(message)) if json != Value::Null => Err(format!("HTTP {status}: {message}")),
@@ -2320,6 +2401,13 @@ fn draft_with_fallback_options(
             failures.push(format!("{}: no key saved", attempt.name));
             continue;
         };
+        if TOO_SMALL_PROVIDERS
+            .lock()
+            .is_ok_and(|skipped| skipped.contains(attempt.name))
+        {
+            failures.push(format!("{}: request too large for its limit", attempt.name));
+            continue;
+        }
         let left = time_left(extras.deadline);
         if left.is_zero() || (weak_draft.is_some() && left < TIME_FOR_ANOTHER_MODEL) {
             info!("Out of time for another model ({left:?} left), using the best draft so far");
@@ -2367,6 +2455,18 @@ fn draft_with_fallback_options(
                     "{} could not draft the reply, trying the next provider: {e}",
                     attempt.name
                 );
+                if e.starts_with("HTTP 413") {
+                    // The request is bigger than this provider's limit, and
+                    // every request is about the same size: asking again
+                    // only costs time.
+                    warn!(
+                        "{} cannot take a request this size, not asking it again this session",
+                        attempt.name
+                    );
+                    if let Ok(mut skipped) = TOO_SMALL_PROVIDERS.lock() {
+                        skipped.insert(attempt.name.to_string());
+                    }
+                }
                 failures.push(format!("{}: {e}", attempt.name));
             }
         }
@@ -2446,6 +2546,7 @@ pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
     // A position found in this picture (the input box) is clicked inside
     // whatever was captured: the window, or else the whole display.
     set_last_input_box(None);
+    crate::reply_box::remember_chat_window();
     match crate::watch::capture_front_window_jpeg() {
         Ok((bytes, area)) => {
             set_capture_area(Some(area));
@@ -2753,7 +2854,10 @@ fn draft_from_screen(
         }
         Err(e) => e,
     };
-    let Some(text) = &chat.transcript else {
+    // The chat's text without the picture: the window's own text on Windows,
+    // else what text recognition read. A provider that blocks the picture
+    // (an explicit chat) often still writes from the words.
+    let Some(text) = extras.window_text.as_ref().or(chat.transcript.as_ref()) else {
         return Err(failure);
     };
     info!("No model drafted from the screenshot ({failure}), trying the chat text alone");
@@ -2810,9 +2914,154 @@ const MORE_CHOICES_WAIT: Duration = Duration::from_secs(4);
 /// How each of the three drafts to choose from should differ.
 const CHOICE_VARIANTS: [Option<&str>; 3] = [
     None,
-    Some("Make this version more playful and casual than a usual reply."),
-    Some("Make this version warmer and more personal, and end on a different kind of question."),
+    Some(
+        "This is the second of three versions written at the same time, so it must read as a \
+         different message, not a reword of the obvious one. Take a lighter, teasing angle: \
+         open with something they said or a playful line, never with how you feel or with a \
+         reaction word, and end with a different kind of question.",
+    ),
+    Some(
+        "This is the third of three versions written at the same time, so it must read as a \
+         different message, not a reword of the obvious one. Take a concrete angle: open with \
+         what you would do, or one small specific detail, never with how you feel or with a \
+         reaction word, and end with a question about a different thing they mentioned.",
+    ),
 ];
+
+/// Words two drafts share, as a share of all their words. Three versions of
+/// one reply that were the same message in other words scored about 0.5.
+fn shared_words(a: &str, b: &str) -> f32 {
+    let words = |t: &str| -> std::collections::HashSet<String> {
+        t.split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let (wa, wb) = (words(a), words(b));
+    let union = wa.union(&wb).count();
+    if union == 0 {
+        return 1.0;
+    }
+    wa.intersection(&wb).count() as f32 / union as f32
+}
+
+/// True when two of the versions to choose from would read as the same
+/// message: they open alike, end on the same question, or mostly share words.
+fn too_alike(a: &str, b: &str) -> bool {
+    if opening(a) == opening(b) {
+        return true;
+    }
+    if let (Some(qa), Some(qb)) = (closing_question(a), closing_question(b)) {
+        if same_cta(qa, qb) {
+            return true;
+        }
+    }
+    shared_words(a, b) >= 0.45
+}
+
+/// Splits drafts into those different enough to offer side by side and those
+/// that read like one already kept.
+fn distinct_choices(drafts: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let mut kept: Vec<String> = Vec::new();
+    let mut alike = Vec::new();
+    for draft in drafts {
+        if kept.iter().any(|k| too_alike(k, &draft)) {
+            alike.push(draft);
+        } else {
+            kept.push(draft);
+        }
+    }
+    (kept, alike)
+}
+
+/// Asks for a version that reads as a different message from the ones
+/// already kept, for the picker.
+fn build_different_version_rewrite_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    draft: &str,
+    kept: &[String],
+) -> Value {
+    let others = kept
+        .iter()
+        .map(|k| format!("- {k}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "system",
+                "content": format!(
+                    "Rewrite the chat message below so it reads as a clearly different message \
+                     from these, which will be shown next to it:\n{others}\nDo not open with \
+                     the same words or the same kind of statement as any of them, take a \
+                     different angle on the same situation, and end with a different question. \
+                     Keep the meaning, tone and length. Reply with the rewritten message text \
+                     only, with no quotes and no explanation."
+                )
+            },
+            { "role": "user", "content": draft }
+        ]
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    body
+}
+
+/// Replaces versions that read like one already kept with rewrites that take
+/// a different angle, while time remains; a look-alike that cannot be
+/// rewritten in time is left out rather than shown twice.
+fn make_choices_distinct(
+    drafts: Vec<String>,
+    attempts: &[Attempt<'static>],
+    deadline: std::time::Instant,
+) -> Vec<String> {
+    let (mut kept, alike) = distinct_choices(drafts);
+    if alike.is_empty() {
+        return kept;
+    }
+    info!(
+        "{} of the versions to choose from read like another, asking for different angles",
+        alike.len()
+    );
+    let Some(attempt) = attempts.iter().find(|a| a.key.is_some()).cloned() else {
+        return kept;
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    for draft in alike {
+        let sender = sender.clone();
+        let attempt = attempt.clone();
+        let kept = kept.clone();
+        std::thread::spawn(move || {
+            let key = attempt.key.as_deref().unwrap_or_default();
+            let body = build_different_version_rewrite_request(
+                attempt.model,
+                attempt.max_tokens,
+                attempt.reasoning_effort,
+                &draft,
+                &kept,
+            );
+            let _ = sender.send(rewrite_reply(attempt.url, key, &body, Some(deadline)));
+        });
+    }
+    drop(sender);
+    while let Ok(result) =
+        receiver.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+    {
+        match result {
+            Ok(rewrite) if !kept.iter().any(|k| too_alike(k, &rewrite)) => kept.push(rewrite),
+            Ok(rewrite) => {
+                info!("A rewritten version still read like another, leaving it out: {rewrite}")
+            }
+            Err(e) => info!("Could not rewrite a look-alike version: {e}"),
+        }
+    }
+    kept
+}
 
 /// Drafts what to type. With `choose`, writes up to three different versions
 /// at once for the user to pick from; a single result (or `choose` off) is
@@ -2897,6 +3146,7 @@ pub fn draft_for_typing(
             drafts.push(draft.clone());
         }
     }
+    let drafts = make_choices_distinct(drafts, &attempts, draft_deadline);
     if drafts.is_empty() {
         let error = results
             .into_iter()
@@ -3005,11 +3255,95 @@ mod tests {
                 .to_string()
         };
         let new = prompt_for(Some(ChatStage::New));
-        assert!(new.contains("NEW CHAT") && new.contains("open this reply by giving it"));
+        assert!(new.contains("NEW CHAT") && new.contains("give it in this reply"));
+        assert!(!new.contains("open this reply by giving it"));
         let ongoing = prompt_for(Some(ChatStage::Ongoing));
         assert!(ongoing.contains("ONGOING CHAT") && !ongoing.contains("NEW CHAT"));
         let unknown = prompt_for(None);
         assert!(!unknown.contains("NEW CHAT") && !unknown.contains("ONGOING CHAT"));
+    }
+
+    #[test]
+    fn versions_that_read_like_one_message_are_not_offered_side_by_side() {
+        // The picker showed these three; every one opened "It hurts to hear".
+        let shown = [
+            "It hurts to hear you say things like that when I genuinely care about what we share here. I am not here to waste your time or play games with you. What made you feel like I do not care about you at all?",
+            "It really hurts to hear you talk to me like that when I care about what we have. I am not here to waste your time or treat you that way. What can I do to show you how much I enjoy talking with you?",
+            "It hurts to hear you talk to me like that because I truly care about what we share here. I am not here to waste your time or treat you that way at all. What can I do to show you how much I enjoy our talks?",
+        ];
+        assert!(too_alike(shown[0], shown[1]));
+        assert!(too_alike(shown[0], shown[2]));
+        assert!(too_alike(shown[1], shown[2]));
+        let (kept, alike) = distinct_choices(shown.iter().map(|s| s.to_string()).collect());
+        assert_eq!(kept, vec![shown[0].to_string()]);
+        assert_eq!(alike.len(), 2);
+
+        let different = [
+            shown[0],
+            "Slow down, cowboy. You asked for a drink one day and wrote me off the next, which tells me you want me more than you let on. If I were sitting across from you right now, what would you order for me?",
+            "Nobody is playing games here, I just like a man who can stand a little waiting. Tell me honestly, what did you picture happening on that drink?",
+        ];
+        let (kept, alike) = distinct_choices(different.iter().map(|s| s.to_string()).collect());
+        assert_eq!(kept.len(), 3, "{alike:?}");
+    }
+
+    #[test]
+    fn the_second_and_third_versions_are_told_to_take_their_own_angle() {
+        for variant in CHOICE_VARIANTS.iter().flatten() {
+            assert!(variant.contains("different message"), "{variant}");
+            assert!(variant.contains("never with how you feel"), "{variant}");
+        }
+        let body = build_different_version_rewrite_request(
+            "m",
+            100,
+            None,
+            "It hurts to hear that.",
+            &["It hurts to hear you say that.".to_string()],
+        );
+        let system = body["messages"][0]["content"].as_str().unwrap();
+        assert!(system.contains("- It hurts to hear you say that."));
+        assert!(system.contains("different angle"));
+    }
+
+    #[test]
+    fn a_draft_that_gives_the_name_like_a_recent_one_is_weak() {
+        let celina = "I'd really enjoy taking my time getting to know you and building up all \
+             that delicious anticipation. I'm Celina, by the way. How long do you think you can \
+             last once you feel me around you?";
+        let josh = "Mmm, that image is going to stay with me all evening. I'm Josh, by the way. \
+             What would you do first if I were there right now?";
+        assert_eq!(name_intro(celina).as_deref(), Some("i'm [name] by the way"));
+        assert_eq!(name_intro(josh), name_intro(celina));
+        assert_eq!(
+            name_intro("Someone with your taste gets to call me Hillary, and I want to hear more.")
+                .as_deref(),
+            Some("someone with your taste gets to call me [name] and i want to hear more")
+        );
+        assert_eq!(
+            name_intro("Kiana here, and you just made my evening.").as_deref(),
+            Some("[name] here and you just made my evening")
+        );
+        assert_eq!(
+            name_intro("I'm so glad you wrote. What are you up to?"),
+            None
+        );
+        assert_eq!(
+            name_intro("It's late here and I am still thinking about you. Tell me more?"),
+            None
+        );
+
+        let reason = weak_draft_reason(josh, &[], &[celina.to_string()]).unwrap();
+        assert!(
+            reason.starts_with("it gives the name like a recent draft"),
+            "{reason}"
+        );
+        let different =
+            "Mmm, that image is going to stay with me all evening, and you can call me \
+             Josh. What would you do first if I were there right now?";
+        assert_eq!(
+            weak_draft_reason(different, &[], &[celina.to_string()]),
+            None
+        );
     }
 
     #[test]
@@ -4382,6 +4716,61 @@ mod tests {
         ] {
             let response = json!({ "choices": [{ "finish_reason": "stop", "message": { "content": valid } }] });
             assert_eq!(parse_reply(&response).unwrap(), valid);
+        }
+
+        // A reasoning model that used up its tokens right after the reply
+        // still wrote the whole reply: OpenRouter's free models did this on
+        // every draft one evening, and nothing was typed.
+        let whole = "You really know how to make a girl wait, don't you? What would you do first if I were there?";
+        let response =
+            json!({ "choices": [{ "finish_reason": "length", "message": { "content": whole } }] });
+        assert_eq!(parse_reply(&response).unwrap(), whole);
+    }
+
+    #[test]
+    fn a_provider_whose_limit_is_too_small_is_not_asked_again() {
+        // Groq's free tier answered this to every draft one evening.
+        let (small_url, small) = serve_once(
+            "413 Payload Too Large",
+            r#"{"error":{"message":"Request too large for model, please reduce your message size"}}"#,
+        );
+        let (ok_url, ok) = serve_once("200 OK", OK_BODY);
+        let (ok_again_url, ok_again) = serve_once("200 OK", OK_BODY);
+        let attempt = |name: &'static str, url: &str| Attempt {
+            name,
+            url: Box::leak(url.to_string().into_boxed_str()),
+            model: "m",
+            max_tokens: MAX_REPLY_TOKENS,
+            reasoning_effort: None,
+            key: Some("k".into()),
+        };
+        let small_name = "Too small for this test";
+        assert_eq!(
+            draft_with_fallback(
+                &[attempt(small_name, &small_url), attempt("Big", &ok_url)],
+                "QUJD"
+            )
+            .unwrap(),
+            "Hi Tarek, thanks."
+        );
+        small.join().unwrap();
+        ok.join().unwrap();
+        // The second draft never reaches the small provider: only the big one
+        // is served, and the test would hang if the small one were asked.
+        assert_eq!(
+            draft_with_fallback(
+                &[
+                    attempt(small_name, &small_url),
+                    attempt("Big", &ok_again_url)
+                ],
+                "QUJD"
+            )
+            .unwrap(),
+            "Hi Tarek, thanks."
+        );
+        ok_again.join().unwrap();
+        if let Ok(mut skipped) = TOO_SMALL_PROVIDERS.lock() {
+            skipped.remove(small_name);
         }
     }
 
