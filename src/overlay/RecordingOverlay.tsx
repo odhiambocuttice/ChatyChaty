@@ -597,28 +597,38 @@ const RecordingOverlay: React.FC = () => {
             <span className="schoose-title">
               {t("overlay.choose.title", "Pick a reply")}
             </span>
-            <button
-              type="button"
-              className="sdock-icon-btn schoose-regenerate"
-              title={t("overlay.choose.regenerate", "Write three new replies")}
-              onClick={() => {
-                setState("drafting");
-                commands.regenerateChoices();
-              }}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              className="sdock-icon-btn"
-              title={t("overlay.choose.cancel", "Cancel (Esc)")}
-              onClick={() => commands.cancelOperation()}
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <div className="schoose-actions">
+              <button
+                type="button"
+                className="sdock-icon-btn"
+                title={t(
+                  "overlay.choose.regenerate",
+                  "Write three new replies",
+                )}
+                aria-label={t(
+                  "overlay.choose.regenerate",
+                  "Write three new replies",
+                )}
+                onClick={() => {
+                  setState("drafting");
+                  commands.regenerateChoices();
+                }}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                className="sdock-icon-btn"
+                title={t("overlay.choose.cancel", "Cancel (Esc)")}
+                aria-label={t("overlay.choose.cancel", "Cancel (Esc)")}
+                onClick={() => commands.cancelOperation()}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
           <div className="stones">
-            {(["shorter", "longer", "funnier", "serious"] as const).map(
+            {(["spicier", "sweeter", "playful", "clean", "topic"] as const).map(
               (tone) => (
                 <button
                   key={tone}
@@ -634,17 +644,19 @@ const RecordingOverlay: React.FC = () => {
               ),
             )}
           </div>
-          {choices.map((choice, index) => (
-            <button
-              key={choice}
-              type="button"
-              className="schoice"
-              onClick={() => commands.chooseDraft(index)}
-            >
-              <span className="schoice-num">{index + 1}</span>
-              <span className="schoice-text">{choice}</span>
-            </button>
-          ))}
+          <div className="schoices">
+            {choices.map((choice, index) => (
+              <button
+                key={choice}
+                type="button"
+                className="schoice"
+                onClick={() => commands.chooseDraft(index)}
+              >
+                <span className="schoice-num">{index + 1}</span>
+                <span className="schoice-text">{choice}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     );

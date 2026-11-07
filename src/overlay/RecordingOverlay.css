@@ -170,21 +170,26 @@
 .scard.choosing {
   animation: none;
   width: min(440px, calc(100vw - 16px));
+  /* Never taller than the window: the drafts list scrolls instead. */
+  max-height: calc(100vh - 2px);
   border-radius: 9px;
-  padding: 8px;
-  gap: 6px;
+  padding: 10px;
+  gap: 8px;
 }
 .schoose-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2px 0 6px;
+  gap: 8px;
+  padding: 0 0 0 4px;
 }
-.schoose-regenerate {
-  margin-left: auto;
+.schoose-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .schoose-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-text);
 }
@@ -192,7 +197,15 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 2px 6px 4px;
+  padding: 0 4px 2px;
+}
+.schoices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .stone {
   font-size: 11px;
@@ -241,12 +254,11 @@
   background: color-mix(in srgb, var(--color-text) 12%, transparent);
 }
 .schoice-text {
+  /* The whole draft: the operator picks on the full text, never a cut-off one. */
   font-size: 12px;
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .scard.hinting {

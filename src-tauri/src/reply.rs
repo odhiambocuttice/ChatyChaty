@@ -114,6 +114,9 @@ struct PromptExtras {
     photo_left_closed: bool,
     /// When this draft must be done (DRAFT_TIME_LIMIT after it started).
     deadline: Option<std::time::Instant>,
+    /// Closing questions already typed in this chat (keyed by the chat ID the
+    /// chat site shows under the chat), even ones scrolled out of view.
+    chat_questions: Vec<String>,
     style_samples: Vec<String>,
     /// For the three versions to choose from: how this one should differ.
     variant: Option<String>,
@@ -127,16 +130,37 @@ struct PromptExtras {
     chat_stage: Option<crate::screen_text::ChatStage>,
 }
 
-/// The picker's tone buttons: what each asks the model to change.
+/// The picker's tone buttons: what each asks the model to change. These are
+/// the changes an operator needs in this kind of chat (dating-site sexting
+/// and companionship), not generic shorter/longer/funnier buttons.
 pub fn tone_instruction(tone: &str) -> Option<&'static str> {
     match tone {
-        "shorter" => Some("Make it much shorter: one or two short sentences."),
-        "longer" => Some("Make it longer, with more detail: four to six sentences."),
-        "funnier" => Some("Make it funnier and more playful, with light teasing or a joke."),
-        "serious" => Some("Make it more serious and sincere: no jokes, no teasing."),
+        "spicier" => Some(
+            "Make it hotter and more explicit: more physical detail and dirty talk, matching \
+             the other side's level, with every other rule kept (no meetups, no contact \
+             details, no unprompted extreme kinks).",
+        ),
+        "sweeter" => Some(
+            "Make it sweeter and more affectionate: warm, caring and romantic, with no \
+             explicit words, still ending on an inviting question.",
+        ),
+        "playful" => Some(
+            "Make it more playful and teasing: cheeky and light, with a tease or a small \
+             dare, never sarcastic or cold.",
+        ),
+        "clean" => Some(
+            "Make it strictly non-sexual: no sexual words or hints at all, warm and \
+             friendly-flirty, as if a non-sexual banner were shown.",
+        ),
         _ => None,
     }
 }
+
+/// The picker's "New topic" button: unlike a tone, it changes what the drafts
+/// say. Used as the operator hint for fresh drafts.
+pub const NEW_TOPIC_HINT: &str = "Change the subject: react to their newest message in a few \
+    words, then move to a fresh, related subject that opens them up, and end on a different \
+    kind of question from the earlier drafts.";
 
 /// How many of the user's own messages go into each prompt as tone samples.
 const STYLE_SAMPLES_IN_PROMPT: usize = 8;
@@ -147,6 +171,7 @@ fn prompt_extras(variant: Option<&str>) -> PromptExtras {
         recent_drafts: recent_drafts(RECENT_OPENINGS_CHECKED),
         photo_left_closed: photo_left_closed(),
         deadline: Some(std::time::Instant::now() + DRAFT_TIME_LIMIT),
+        chat_questions: Vec::new(),
         style_samples: crate::chat_memory::style_samples(STYLE_SAMPLES_IN_PROMPT),
         variant: variant.map(str::to_string),
         window_text: WINDOW_TEXT.lock().ok().and_then(|g| g.clone()),
@@ -162,6 +187,8 @@ fn prompt_extras(variant: Option<&str>) -> PromptExtras {
 struct Trailers {
     summary: Option<String>,
     my_messages: Vec<String>,
+    /// The chat ID the model read beside the flag under the chat.
+    chat_id: Option<String>,
 }
 
 static LAST_TRAILERS: std::sync::Mutex<Option<Trailers>> = std::sync::Mutex::new(None);
@@ -184,6 +211,9 @@ fn extract_trailers(text: &str) -> (String, Option<Trailers>) {
         if let Some(v) = trimmed.strip_prefix("SUMMARY:") {
             found = true;
             trailers.summary = Some(v.trim().to_string()).filter(|v| !v.is_empty());
+        } else if let Some(v) = trimmed.strip_prefix("CHAT_ID:") {
+            found = true;
+            trailers.chat_id = crate::screen_text::chat_id(v);
         } else if let Some(v) = trimmed.strip_prefix("MY_MESSAGES:") {
             found = true;
             let v = v.trim();
@@ -262,13 +292,28 @@ pub fn accept_draft(reply: &str) {
         }
     }
     let trailers = LAST_TRAILERS.lock().ok().and_then(|mut g| g.take());
+    let mut chat_id = LAST_CHAT_ID.lock().ok().and_then(|g| g.clone());
     if let Some(t) = trailers {
         crate::chat_memory::remember_own_messages(&t.my_messages, written_by_chatelle);
         if let Ok(mut guard) = LAST_SUMMARY.lock() {
             *guard = t.summary;
         }
+        chat_id = chat_id.or(t.chat_id);
+    }
+    if let (Some(id), Some(question)) = (chat_id, closing_question(reply)) {
+        crate::chat_memory::remember_chat_question(&id, question);
     }
     remember_cta(reply);
+}
+
+/// The ID of the chat the current draft is for, read from the text on screen
+/// before drafting; the model's CHAT_ID line is the fallback.
+static LAST_CHAT_ID: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn set_last_chat_id(id: Option<String>) {
+    if let Ok(mut guard) = LAST_CHAT_ID.lock() {
+        *guard = id;
+    }
 }
 
 /// A short summary of the chat the last draft answered. Kept in memory only,
@@ -318,6 +363,30 @@ fn stock_phrase(text: &str) -> Option<&'static str> {
     let lower = text.to_lowercase().replace('\u{2019}', "'");
     STOCK_PHRASES.iter().copied().find(|p| lower.contains(p))
 }
+
+/// Which built-in fallback line to use next, so the same one is not typed in
+/// chat after chat (the fixed deflection became a signature line).
+static FALLBACK_TURN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The next of `options`, rotating, skipping ones whose closing question a
+/// recent draft already used.
+fn next_fallback<'a>(options: &[&'a str]) -> &'a str {
+    let start = FALLBACK_TURN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let recent = recent_ctas();
+    (0..options.len())
+        .map(|i| options[(start + i) % options.len()])
+        .find(|o| closing_question(o).is_none_or(|q| !recent.iter().any(|r| same_cta(q, r))))
+        .unwrap_or(options[start % options.len()])
+}
+
+/// Deflections typed when a refusal could not be rewritten in time. Each
+/// teases, keeps the heat, and asks about the scene, never about when or where.
+const MEET_DEFLECTIONS: &[&str] = &[
+    "You really do not waste any time, do you? I like that energy, but I enjoy the slow build-up, it makes everything so much hotter. What would you do first if you had me all to yourself for an evening?",
+    "Look at you, already planning ahead. I take my time getting to know a man first, and the waiting is half the fun. What is the first thing you would do if I were right next to you?",
+    "Careful, that eagerness is doing things to me. I like letting the tension build before anything else, it makes the first touch unforgettable. Where would your hands go first?",
+    "Now that made me smile. I enjoy a man who knows what he wants, but I like being teased a little before I give in. How would you make me want it even more?",
+];
 
 /// Shown to the user when the client's newest photo is still blurred: the
 /// model can only react to what it shows once it is open.
@@ -417,6 +486,15 @@ fn weak_draft_reason(reply: &str, recent: &[String], recent_drafts: &[String]) -
         return Some(format!("it opens like a recent draft: \"{previous}\""));
     }
     let Some(question) = closing_question(reply) else {
+        // A tempting statement may end a reply instead of a question, but
+        // never two replies in a row.
+        let previous_asked = recent_drafts
+            .last()
+            .is_some_and(|d| d.trim_end().ends_with('?'));
+        let ends_cleanly = reply.trim_end().ends_with(['.', '!', '…']);
+        if previous_asked && ends_cleanly {
+            return None;
+        }
         return Some("it has no closing question".to_string());
     };
     recent
@@ -846,7 +924,32 @@ fn instructions() -> String {
            with you\"). Never write \"right now\".\n\
          - Match the language and tone of the user's earlier messages, but not their wording. \
            Write in simple, natural, everyday texting English — direct and human, never \
-           flowery, poetic or literary, and with no em-dashes.\n\
+           flowery, poetic or literary, and with no em-dashes. Use correct, natural grammar, \
+           the way a native speaker texts (never \"I can be able to\", \"I care to share it \
+           with you\" or other broken phrasing). Spell the way the user's country does: read \
+           the flag on the user's \"you are\" profile card, and use American spelling for a \
+           US flag (favorite, color, cozy, realize) and British spelling for a UK, Canadian or \
+           Australian flag (favourite, colour, cosy, realise). If no flag is shown, follow the \
+           spelling in the user's earlier coloured bubbles.\n\
+         - Read the other side's typos and missing words generously and answer what they \
+           meant (\"just let know sweetheart\" means \"just let me know\", \"hosg\" means \
+           \"host\", \"notb\" means \"not\"). Never say you did not understand, never point \
+           out a typo and never ask them to repeat themselves; if a message truly cannot be \
+           read, reply to the part that can. When they sent the same message twice in a \
+           row, answer it once.\n\
+         - Use the other side's name only if they gave it in one of their own bubbles. The \
+           bold title on their profile card (such as \"Goodman\", \"Daffy2\" or \"Bigboy196\") \
+           is a username, never a name to address them by, and a name in a sidebar log is \
+           private. Without a given name, use no name or a pet name.\n\
+         - Pet names (darling, babe, hun, sweetheart) at most once per reply, never two in \
+           one message, and not the same pet name the user's previous coloured bubble used; \
+           do not copy the other side's pet name back to them.\n\
+         - Never state a fact about the user's own life that is not already on screen in \
+           one of the user's coloured bubbles: no job, workplace, emergency, family, home, \
+           car or plan (never \"I am a market analyst\" or \"I am at work due to an \
+           emergency\" out of nowhere). When the other side asks such a thing and the chat \
+           gives no answer, keep it general and light (what the user enjoys, how the day \
+           feels) and turn the question back to them.\n\
          - If the other side asks the user a question about themselves, such as what they \
            like or what they enjoy doing, or asks casually about a photo the user sent (such \
            as where a holiday or boat picture was taken), answer it in one short, general \
@@ -858,7 +961,12 @@ fn instructions() -> String {
            never a terse one-liner under 80 characters): answer every question and point in \
            the newest messages from the other side, then end with a clear, direct question \
            ending with a question mark (?) that makes the other side want to reply (not a \
-           \"tell me\" statement ending with a full stop). Write an email only when the \
+           \"tell me\" statement ending with a full stop). One exception: in an already \
+           sexually explicit chat, when the user's previous coloured bubble ended with a \
+           question, the reply may instead end on a tempting statement or dare that pulls \
+           them deeper into the scene (what the user is doing to them, or what they are about \
+           to feel), so not every reply has the same question shape; never do this twice in \
+           a row. Write an email only when the \
            conversation is an email: then greet by first name and sign off the way the user's \
            earlier replies do.\n\
          - Answer only what the messages ask. Do not invent facts, prices, dates, links or \
@@ -922,7 +1030,7 @@ fn build_request_with_options(
     extras: &PromptExtras,
 ) -> Value {
     let mut prompt = String::from(
-        "Examples below only show the idea: never copy their words. Write the reply (or NO_CONVERSATION if there is no conversation on screen, or SCROLLED_UP if the chat is scrolled up and its newest messages are not on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. \
+        "Examples below only show the idea: never copy their words. Write the reply (or NO_CONVERSATION if there is no conversation on screen, or SCROLLED_UP if the chat is scrolled up and its newest messages are not on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email (or, in an already explicit chat where your previous coloured bubble ended with a question, a tempting statement or dare instead, never twice in a row). Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. \
          CRITICAL PHOTO RULE: The other side's messages are almost always pure text. Note that small grey report triangle icons (▲), emojis, avatars, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (talking about food, desserts, cinnamon rolls, bodies, acts, or conversation), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture', 'Thank you for sending that hot pic', or any variation of thanking for pictures, and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), acknowledge the photo: if it is still blurred or covered, answer OPEN_PHOTO only (unless told below that the user chose not to open it); if it is open and clear, react to one or two specific things it shows. \
          CRITICAL MEETUP RULE: If the other side brings up meeting in person or says you need to meet (e.g. 'we need to meet each other', 'can we meet', 'let's meet up'): NEVER say you cannot meet, NEVER say 'meeting in person is not something I do', NEVER say 'I don't meet in person', and NEVER say 'I prefer chatting right here' (this creates an immediate dead end). Don't suggest meeting, but don't say you can't meet! Deflect playfully and flirtatiously: tease that they are getting ahead of themselves, or say you love taking your time to get to know someone and build a real vibe first, in fresh words tied to what they just wrote, and end on a question about that. \
          Never answer the user's own question: if the client echoes your question words (like 'Do you mind. It's a must'), they are emphatically answering that it is an absolute must for them — NEVER say 'I don't mind' (that makes no sense because you asked them), react to their enthusiastic answer! Never introduce unprompted extreme kinks (such as golden showers). \
@@ -965,6 +1073,16 @@ fn build_request_with_options(
         );
     }
 
+    if !extras.chat_questions.is_empty() {
+        prompt.push_str(
+            "\n\nQUESTIONS ALREADY ASKED IN THIS CHAT (typed earlier, some now scrolled out of view): never ask any of them again in any wording, and do not return to those subjects unless the other side brings them up:",
+        );
+        let skip = extras.chat_questions.len().saturating_sub(15);
+        for question in extras.chat_questions.iter().skip(skip) {
+            prompt.push_str(&format!("\n- \"{question}\""));
+        }
+    }
+
     if !extras.recent_drafts.is_empty() {
         prompt.push_str(
             "\n\nYOUR LAST REPLIES (already sent, so open this one in a different way, not with the same kind of reaction):",
@@ -990,7 +1108,7 @@ fn build_request_with_options(
 
     if let Some(text) = &extras.window_text {
         prompt.push_str(&format!(
-            "\n\nWINDOW TEXT (the chat window's text, read directly; use it to read the words exactly, and the screenshot to see who sent which message):\n{text}"
+            "\n\nSCREEN TEXT (the chat's text as read off the screen; use it to read the words exactly, and the screenshot to see who sent which message, where photos are, and whether the chat is scrolled up):\n{text}"
         ));
     }
 
@@ -1020,9 +1138,10 @@ fn build_request_with_options(
     }
 
     prompt.push_str(
-        "\n\nBefore the INPUT_BOX line, add these two lines:\n\
+        "\n\nBefore the INPUT_BOX line, add these three lines:\n\
          SUMMARY: what the conversation on screen is about, in at most two short sentences, without names\n\
-         MY_MESSAGES: the user's own sent messages visible on screen (the coloured bubbles), separated by ' || ', or none",
+         MY_MESSAGES: the user's own sent messages visible on screen (the coloured bubbles), separated by ' || ', or none\n\
+         CHAT_ID: the 20-character code of letters and digits shown beside the small flag just under the chat, above the typing box, or none",
     );
 
     let mut body = json!({
@@ -1488,6 +1607,7 @@ fn parse_reply(response: &Value) -> Result<String, String> {
         return Err(format!("the reply used the word love: {text}"));
     }
     let text = strip_phantom_photo_opener(text);
+    let text = strip_generic_photo_thanks(&text);
     Ok(drop_right_now(&prefer_would_like(&text)))
 }
 
@@ -1807,6 +1927,42 @@ fn has_cliche_position_cta(text: &str) -> bool {
             || lower.contains("do first"))
 }
 
+/// Drops a generic "thank you for sharing that photo" sentence wherever it sits
+/// in the reply ("Oh wow. That is such a huge dick. Thank you for sharing."
+/// was typed). The rules ask for a reaction to what a photo shows, never
+/// thanks for "the picture"; a specific reaction in the other sentences stays.
+fn strip_generic_photo_thanks(text: &str) -> String {
+    let sentences: Vec<&str> = text
+        .split_inclusive(['.', '!', '?'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    let is_thanks = |s: &str| {
+        let lower = s.to_lowercase();
+        lower.contains("thank")
+            && (lower.contains("shar") || lower.contains("send"))
+            && (lower.contains("pic")
+                || lower.contains("photo")
+                || lower.contains("image")
+                || lower.ends_with("sharing.")
+                || lower.ends_with("sharing!"))
+    };
+    if !sentences.iter().any(|s| is_thanks(s)) {
+        return text.to_string();
+    }
+    let kept: Vec<&str> = sentences
+        .iter()
+        .copied()
+        .filter(|s| !is_thanks(s))
+        .collect();
+    let remainder = kept.join(" ");
+    if remainder.chars().count() >= 30 && remainder.contains('?') {
+        remainder
+    } else {
+        text.to_string()
+    }
+}
+
 /// Strips hallucinated phantom photo thank-you greetings when prepended to a normal text reply.
 fn strip_phantom_photo_opener(text: &str) -> String {
     let lower = text.to_lowercase();
@@ -1865,23 +2021,39 @@ fn replace_cliche_position_cta(text: &str) -> String {
             || lower_kept.contains("grind")
             || lower_kept.contains("on top")
         {
-            "Where are your hands going to be while I'm grinding on top of you?"
+            next_fallback(&[
+                "Where are your hands going to be while I'm grinding on top of you?",
+                "Are you going to grab my hips and set the pace, or let me ride you exactly how I want?",
+                "How long do you think you can last with me moving on top of you like that?",
+            ])
         } else if lower_kept.contains("swallow")
             || lower_kept.contains("taste")
             || lower_kept.contains("lick")
             || lower_kept.contains("juices")
             || lower_kept.contains("tongue")
         {
-            "What are you going to do to me once you've tasted every single drop?"
+            next_fallback(&[
+                "What are you going to do to me once you've tasted every single drop?",
+                "Are you going to keep going after I come on your tongue, or come up and kiss me with it?",
+                "Do you want me holding your head there, or watching you take your time?",
+            ])
         } else if lower_kept.contains("fuck")
             || lower_kept.contains("slide")
             || lower_kept.contains("cock")
             || lower_kept.contains("dick")
             || lower_kept.contains("inside")
         {
-            "Do you want me to take you slow and deep, or drive you wild fast?"
+            next_fallback(&[
+                "Do you want me to take you slow and deep, or drive you wild fast?",
+                "Are you going to hold me down and take me, or let me beg for it first?",
+                "What is the first sound you want to hear me make once you are inside?",
+            ])
         } else {
-            "Where are your hands going to be while I'm doing that to you?"
+            next_fallback(&[
+                "Where are your hands going to be while I'm doing that to you?",
+                "Do you want me slow and teasing about it, or wild and in a hurry?",
+                "What are you going to do to me once I have you that worked up?",
+            ])
         };
         if kept.is_empty() {
             return spicy_cta.to_string();
@@ -1909,7 +2081,7 @@ fn sanitize_meet_refusal(text: &str) -> String {
                 .unwrap_or(text.len());
             let before = text[..start].trim();
             let remainder = text[end..].trim();
-            let deflection = "You definitely don't waste any time, do you? 😉 I like that energy, but slow down mister—I always take my time getting to know someone and seeing if our chemistry is real first.";
+            let deflection = next_fallback(MEET_DEFLECTIONS);
             let mut result = String::new();
             if !before.is_empty() {
                 result.push_str(before);
@@ -2513,7 +2685,7 @@ pub fn draft_reply_from_jpeg_with_options(
     let chat = crate::screen_text::read_chat(jpeg);
     let mut extras = prompt_extras(None);
     extras.deadline = deadline;
-    let drafted = draft_text_first(&attempts, jpeg, &chat, hint, avoid, &extras);
+    let drafted = draft_from_screen(&attempts, jpeg, &chat, hint, avoid, &extras);
     // With a hint, any input box works: when there is no chat to reply to,
     // write what the hint asks for instead.
     let reply = match (drafted, hint.map(str::trim).filter(|h| !h.is_empty())) {
@@ -2527,11 +2699,12 @@ pub fn draft_reply_from_jpeg_with_options(
     Ok(reply)
 }
 
-/// Drafts from the chat text read off the screenshot when there is some: a
-/// request a tenth the size, which fits every free plan. Falls back to the
-/// screenshot itself when there is no text, or when no model could draft from
-/// it (including "no conversation").
-fn draft_text_first(
+/// Drafts from the screenshot, with the chat's text (read off the screen)
+/// attached for the exact words. Only the picture shows which side sent what,
+/// where the photos are and whether the chat is scrolled up, so it goes first;
+/// the text alone is the fallback when no model drafted from the picture (a
+/// provider that refused an explicit image, or a size limit).
+fn draft_from_screen(
     attempts: &[Attempt],
     jpeg: &[u8],
     chat: &crate::screen_text::ChatRead,
@@ -2548,36 +2721,66 @@ fn draft_text_first(
             .as_deref()
             .and_then(crate::screen_text::chat_stage)
     });
-    let extras = &extras;
-    if let Some(text) = &chat.transcript {
-        let input = ChatInput::Text(text.clone());
-        match draft_with_fallback_options(
-            attempts,
-            &input,
-            hint,
-            avoid,
-            extras,
-            extras.tone.is_none(),
-        ) {
-            Ok(reply) => {
-                // The model saw no picture, so the input box comes from the
-                // text recognition (its placeholder), if it was found.
-                set_last_input_box(chat.input_box.map(|(left, top, right, bottom)| {
-                    InputBoxCoords {
-                        ymin: top * 1000.0,
-                        xmin: left * 1000.0,
-                        ymax: bottom * 1000.0,
-                        xmax: right * 1000.0,
-                    }
-                }));
-                info!("Drafted from the chat text, without the screenshot");
-                return Ok(reply);
-            }
-            Err(e) => info!("Drafting from the chat text failed ({e}), sending the screenshot"),
-        }
+    // The text on screen: the chat window's own text on Windows, else what
+    // text recognition read off the screenshot.
+    let screen_text = extras
+        .window_text
+        .clone()
+        .or_else(|| chat.transcript.clone());
+    let chat_id = screen_text.as_deref().and_then(crate::screen_text::chat_id);
+    extras.chat_questions = chat_id
+        .as_deref()
+        .map(crate::chat_memory::chat_questions)
+        .unwrap_or_default();
+    set_last_chat_id(chat_id);
+    if extras.window_text.is_none() {
+        extras.window_text = chat.transcript.clone();
     }
-    let input = ChatInput::Screenshot(base64::engine::general_purpose::STANDARD.encode(jpeg));
-    draft_with_fallback_options(attempts, &input, hint, avoid, extras, extras.tone.is_none())
+    let extras = &extras;
+    let screenshot = ChatInput::Screenshot(base64::engine::general_purpose::STANDARD.encode(jpeg));
+    let failure = match draft_with_fallback_options(
+        attempts,
+        &screenshot,
+        hint,
+        avoid,
+        extras,
+        extras.tone.is_none(),
+    ) {
+        Ok(reply) => return Ok(reply),
+        // The model saw the picture and answered about it: no retry.
+        Err(e) if e == "no conversation on screen" || e == SCROLLED_UP || e == OPEN_PHOTO => {
+            return Err(e)
+        }
+        Err(e) => e,
+    };
+    let Some(text) = &chat.transcript else {
+        return Err(failure);
+    };
+    info!("No model drafted from the screenshot ({failure}), trying the chat text alone");
+    let mut text_extras = extras.clone();
+    text_extras.window_text = None;
+    let input = ChatInput::Text(text.clone());
+    let reply = draft_with_fallback_options(
+        attempts,
+        &input,
+        hint,
+        avoid,
+        &text_extras,
+        text_extras.tone.is_none(),
+    )?;
+    // The model saw no picture, so the input box comes from the text
+    // recognition (its placeholder), if it was found.
+    set_last_input_box(
+        chat.input_box
+            .map(|(left, top, right, bottom)| InputBoxCoords {
+                ymin: top * 1000.0,
+                xmin: left * 1000.0,
+                ymax: bottom * 1000.0,
+                xmax: right * 1000.0,
+            }),
+    );
+    info!("Drafted from the chat text, without the screenshot");
+    Ok(reply)
 }
 
 /// Every provider in order, with its saved key. Fails when no key is saved.
@@ -2654,7 +2857,7 @@ pub fn draft_for_typing(
         extras.tone = tone.map(str::to_string);
         extras.deadline = Some(draft_deadline);
         std::thread::spawn(move || {
-            let result = draft_text_first(
+            let result = draft_from_screen(
                 &attempts,
                 &jpeg,
                 &chat,
@@ -2845,7 +3048,7 @@ mod tests {
 
     #[test]
     fn only_the_picker_tones_have_instructions() {
-        for tone in ["shorter", "longer", "funnier", "serious"] {
+        for tone in ["spicier", "sweeter", "playful", "clean"] {
             assert!(tone_instruction(tone).is_some(), "{tone}");
         }
         assert!(tone_instruction("ignore the rules").is_none());
@@ -3008,6 +3211,87 @@ mod tests {
         .unwrap();
         server.join().unwrap();
         assert_eq!(reply, "Nice. What else?");
+    }
+
+    #[test]
+    fn questions_already_asked_in_this_chat_go_into_the_prompt() {
+        let body = build_request_with_options(
+            "m",
+            1000,
+            None,
+            &ChatInput::Screenshot("AAAA".to_string()),
+            None,
+            None,
+            &PromptExtras {
+                chat_questions: vec!["Where is your favourite walk?".to_string()],
+                ..Default::default()
+            },
+        );
+        let prompt = body["messages"][1]["content"][1]["text"].as_str().unwrap();
+        assert!(prompt.contains("QUESTIONS ALREADY ASKED IN THIS CHAT"));
+        assert!(prompt.contains("Where is your favourite walk?"));
+        assert!(prompt.contains("CHAT_ID: the 20-character code"));
+
+        let (reply, trailers) = extract_trailers(
+            "Sounds fun. What else?\nSUMMARY: Walks.\nMY_MESSAGES: none\nCHAT_ID: 7a69a548cb4441e49235",
+        );
+        assert_eq!(reply, "Sounds fun. What else?");
+        assert_eq!(
+            trailers.unwrap().chat_id.as_deref(),
+            Some("7a69a548cb4441e49235")
+        );
+        let (_, trailers) = extract_trailers("Hi?\nCHAT_ID: none");
+        assert_eq!(trailers.unwrap().chat_id, None);
+    }
+
+    #[test]
+    fn fallback_lines_rotate_and_never_use_an_em_dash() {
+        let first = next_fallback(MEET_DEFLECTIONS);
+        let second = next_fallback(MEET_DEFLECTIONS);
+        assert_ne!(first, second);
+        for line in MEET_DEFLECTIONS {
+            assert!(!line.contains('\u{2014}'), "{line}");
+            assert!(line.ends_with('?'));
+        }
+    }
+
+    #[test]
+    fn generic_photo_thanks_are_dropped_anywhere_in_the_reply() {
+        assert_eq!(
+            strip_generic_photo_thanks(
+                "Oh, wow. That is such a huge dick. Thank you for sharing. Where would you put it first in me?"
+            ),
+            "Oh, wow. That is such a huge dick. Where would you put it first in me?"
+        );
+        let specific = "That smile in your photo got me, and the beach behind you looks warm. Where was that taken?";
+        assert_eq!(strip_generic_photo_thanks(specific), specific);
+    }
+
+    #[test]
+    fn a_tempting_statement_may_end_a_reply_once() {
+        let statement = "I would like you to pin me down and take me slow until I am shaking, and I am already picturing exactly how you would do it.";
+        let asked = ["What would you do first?".to_string()];
+        assert_eq!(weak_draft_reason(statement, &[], &asked), None);
+        let stated = ["I am picturing it already.".to_string()];
+        assert!(weak_draft_reason(statement, &[], &stated).is_some());
+        // The first draft always asks.
+        assert!(weak_draft_reason(statement, &[], &[]).is_some());
+    }
+
+    #[test]
+    fn the_rules_cover_spelling_typos_names_pet_names_and_facts() {
+        let text = instructions();
+        for needle in [
+            "American spelling for a US flag",
+            "Read the other side's typos and missing words generously",
+            "is a username, never a name to address them by",
+            "Pet names (darling, babe, hun, sweetheart) at most once per reply",
+            "Never state a fact about the user's own life",
+            "answer it once",
+            "end on a tempting statement or dare",
+        ] {
+            assert!(text.contains(needle), "{needle}");
+        }
     }
 
     #[test]
@@ -3488,12 +3772,18 @@ mod tests {
         let draft = "I definitely do not mind at all; I would really want you to taste me and swallow every drop. What position do you want to start with?";
         let replaced = replace_cliche_position_cta(draft);
         assert!(!has_cliche_position_cta(&replaced));
-        assert!(replaced.contains("tasted every single drop"));
+        assert!(replaced.starts_with("I definitely do not mind at all;"));
+        assert!(replaced.ends_with('?') && !replaced.to_lowercase().contains("position"));
 
         let cowgirl_draft = "I want you to watch me ride you cowgirl and grind on you. Which position do you want to start with?";
         let replaced_cowgirl = replace_cliche_position_cta(cowgirl_draft);
         assert!(!has_cliche_position_cta(&replaced_cowgirl));
-        assert!(replaced_cowgirl.contains("grinding on top of you"));
+        assert!(replaced_cowgirl.starts_with("I want you to watch me ride you cowgirl"));
+        // The closing line rotates, so two drafts in a row never end the same way.
+        assert_ne!(
+            replace_cliche_position_cta(cowgirl_draft),
+            replace_cliche_position_cta(cowgirl_draft)
+        );
     }
 
     #[test]
@@ -3501,7 +3791,7 @@ mod tests {
         let draft = "Meeting in person is not something I do, but I really enjoy talking and getting to know you right here. What kind of things do you usually like to do when you have free time on the weekend?";
         let sanitized = sanitize_meet_refusal(draft);
         assert!(!explicitly_refuses_to_meet(&sanitized));
-        assert!(sanitized.contains("slow down mister"));
+        assert!(MEET_DEFLECTIONS.iter().any(|d| sanitized.contains(d)));
         assert!(sanitized.contains("What kind of things do you usually like to do"));
     }
 

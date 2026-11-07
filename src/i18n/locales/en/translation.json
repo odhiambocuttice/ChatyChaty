@@ -265,10 +265,11 @@
       "regenerate": "Show three new replies",
       "cancel": "Cancel (Esc)",
       "tone": {
-        "shorter": "Shorter",
-        "longer": "Longer",
-        "funnier": "Funnier",
-        "serious": "More serious"
+        "spicier": "Spicier",
+        "sweeter": "Sweeter",
+        "playful": "Playful",
+        "clean": "Keep it clean",
+        "topic": "New topic"
       }
     },
     "dock": {

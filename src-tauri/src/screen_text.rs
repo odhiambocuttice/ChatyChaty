@@ -160,6 +160,20 @@ pub enum ChatStage {
     Ongoing,
 }
 
+/// The chat site's chat ID, shown beside a small flag under the chat (such as
+/// "7a69a548cb4441e49235"): one 20-character word of letters and digits with
+/// at least one of each. The lowest one on screen wins. It keys the memory of
+/// what was already asked in this chat, including what has scrolled away.
+pub fn chat_id(text: &str) -> Option<String> {
+    text.split(|c: char| !c.is_ascii_alphanumeric())
+        .rfind(|w| {
+            w.len() == 20
+                && w.chars().any(|c| c.is_ascii_digit())
+                && w.chars().any(|c| c.is_ascii_alphabetic())
+        })
+        .map(str::to_string)
+}
+
 /// Reads the chat site's markers in the text on screen. The divider wins over
 /// the pinned label, because the divider shows only when the chat's start is
 /// on screen. None when no marker was read; the model then judges itself.
@@ -270,6 +284,22 @@ mod tests {
         println!("{}", chat.transcript.expect("no text read"));
         println!("input box: {:?}", chat.input_box);
         println!("stage: {:?}", chat.stage);
+    }
+
+    #[test]
+    fn finds_the_chat_id_under_the_chat() {
+        let text = "Balls deep.\n11:56 | 12:56 Sun, Nov 1, 2026 — a few seconds ago\noGtJe3dTc0zL5Cwt49oa\nType your reply here...";
+        assert_eq!(chat_id(text).as_deref(), Some("oGtJe3dTc0zL5Cwt49oa"));
+        assert_eq!(
+            chat_id("7a69a548cb4441e49235").as_deref(),
+            Some("7a69a548cb4441e49235")
+        );
+        // Ordinary words, times and dates are never an ID.
+        assert_eq!(
+            chat_id("Sitting by the water as the sun goes down 12:49 Sun, Nov 1, 2026"),
+            None
+        );
+        assert_eq!(chat_id("aaaaaaaaaaaaaaaaaaaa 12345678901234567890"), None);
     }
 
     #[test]
