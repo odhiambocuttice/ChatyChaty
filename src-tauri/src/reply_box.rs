@@ -79,9 +79,20 @@ pub fn find_reply_box(front_app_pid: Option<i32>) -> Option<ReplyBox> {
     platform::find_reply_box(front_app_pid)
 }
 
+/// Remembers the window in front as the chat window. Called when the screen
+/// is captured for a draft, so that typing can go back to that window after
+/// the user clicked a choice in Chatelle's own picker (on Windows that click
+/// makes the picker the window in front). No-op elsewhere.
+pub fn remember_chat_window() {
+    platform::remember_chat_window();
+}
+
 #[cfg(target_os = "macos")]
 mod platform {
     use super::{pick, Frame, ReplyBox, MAX_NODES};
+
+    /// The picker never takes the front on macOS (a non-activating panel).
+    pub fn remember_chat_window() {}
     use core_foundation::array::CFArray;
     use core_foundation::base::{CFRelease, CFRetain, CFTypeRef, TCFType};
     use core_foundation::string::{CFString, CFStringRef};
@@ -346,7 +357,7 @@ impl platform::Survey {
 #[cfg(target_os = "windows")]
 mod platform {
     use super::{pick, Frame, ReplyBox, MAX_NODES};
-    use windows::Win32::Foundation::RECT;
+    use windows::Win32::Foundation::{HWND, RECT};
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
     };
@@ -354,7 +365,9 @@ mod platform {
         CUIAutomation, IUIAutomation, IUIAutomationElement, TreeScope_Descendants,
         UIA_DocumentControlTypeId, UIA_EditControlTypeId,
     };
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId, SetForegroundWindow,
+    };
 
     fn automation() -> Option<IUIAutomation> {
         unsafe {
@@ -380,8 +393,45 @@ mod platform {
         }
     }
 
+    /// The chat window's handle, remembered when the screen was captured.
+    static CHAT_WINDOW: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+    pub fn remember_chat_window() {
+        let hwnd = unsafe { GetForegroundWindow() };
+        if !window_is_ours(hwnd) {
+            CHAT_WINDOW.store(hwnd.0 as isize, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    fn window_is_ours(hwnd: HWND) -> bool {
+        use windows::Win32::System::Threading::GetCurrentProcessId;
+        let mut pid: u32 = 0;
+        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+        pid == unsafe { GetCurrentProcessId() }
+    }
+
+    /// The chat window: the window in front, unless that is one of
+    /// Chatelle's own (the picker the user just clicked), in which case the
+    /// remembered chat window is brought back to the front first.
+    fn chat_window() -> HWND {
+        let front = unsafe { GetForegroundWindow() };
+        if !window_is_ours(front) {
+            return front;
+        }
+        let remembered = HWND(CHAT_WINDOW.load(std::sync::atomic::Ordering::SeqCst) as *mut _);
+        if remembered.0.is_null() {
+            return front;
+        }
+        unsafe {
+            let _ = SetForegroundWindow(remembered);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        remembered
+    }
+
     pub fn focus_is_editable(_front_app_pid: Option<i32>) -> Option<bool> {
         let automation = automation()?;
+        let _ = chat_window();
         let focused = unsafe { automation.GetFocusedElement() }.ok()?;
         Some(is_text_field(&focused))
     }
@@ -389,7 +439,7 @@ mod platform {
     pub fn find_reply_box(_front_app_pid: Option<i32>) -> Option<ReplyBox> {
         let automation = automation()?;
         let fields = unsafe {
-            let hwnd = GetForegroundWindow();
+            let hwnd = chat_window();
             let mut rect = RECT::default();
             GetWindowRect(hwnd, &mut rect).ok()?;
             let window = rect_to_box(rect);
@@ -437,6 +487,8 @@ mod platform {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 mod platform {
     use super::ReplyBox;
+
+    pub fn remember_chat_window() {}
 
     pub fn focus_is_editable(_front_app_pid: Option<i32>) -> Option<bool> {
         None

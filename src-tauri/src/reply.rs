@@ -20,7 +20,8 @@ use std::time::Duration;
 const MAX_REPLY_TOKENS: u32 = 2000;
 /// Groq's free tier reserves `max_tokens` against a 1,000 output-tokens-per-minute cap.
 const GROQ_MAX_REPLY_TOKENS: u32 = 800;
-/// OpenRouter's free router picks reasoning vision models that spend ~3,000 tokens thinking.
+/// OpenRouter's free router picks reasoning vision models that spend ~3,000 tokens
+/// thinking, and with the default effort some never got to the reply ("cut off").
 const OPENROUTER_MAX_REPLY_TOKENS: u32 = 4096;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -35,6 +36,12 @@ const TIME_FOR_ANOTHER_MODEL: Duration = Duration::from_secs(10);
 /// Below this much time left, a draft that needs a rewrite is not sent back
 /// to the model; the built-in safe fix is used where there is one.
 const TIME_FOR_A_REWRITE: Duration = Duration::from_secs(6);
+
+/// Providers that answered HTTP 413 (request too large) this session: Groq's
+/// free tier takes 7,000 input tokens a minute and a draft needs about 11,000.
+static TOO_SMALL_PROVIDERS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashSet<String>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
 
 /// Time left before the draft's deadline (all of REQUEST_TIMEOUT without one).
 fn time_left(deadline: Option<std::time::Instant>) -> Duration {
@@ -616,7 +623,7 @@ const PROVIDERS: [Provider; 3] = [
         url: "https://openrouter.ai/api/v1/chat/completions",
         model: "openrouter/free",
         max_tokens: OPENROUTER_MAX_REPLY_TOKENS,
-        reasoning_effort: None,
+        reasoning_effort: Some("low"),
         keychain_service: "chatelle-openrouter-key",
         env_var: "OPENROUTER_API_KEY",
     },
@@ -1599,7 +1606,18 @@ fn parse_reply(response: &Value) -> Result<String, String> {
             return Err(format!("blocked by provider filter ({reason})"));
         }
         if matches!(lowered.as_str(), "length" | "max_tokens") {
-            return Err(format!("reply was cut off ({reason})"));
+            // A reasoning model that ran out of tokens right after finishing
+            // the reply still wrote the whole reply: keep it when it ends a
+            // sentence. Cut mid-sentence, it is never typed.
+            let content = response
+                .pointer("/choices/0/message/content")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let text = strip_thinking(content);
+            let text = text.trim();
+            if !text.ends_with(['.', '!', '?']) {
+                return Err(format!("reply was cut off ({reason})"));
+            }
         }
     }
     let content = response
@@ -2213,6 +2231,11 @@ fn request_reply(
     let status = response.status().as_u16();
     let json: Value = response.body_mut().read_json().unwrap_or(Value::Null);
     let reply = parse_reply(&json);
+    if reply.as_ref().is_err_and(|e| e == "no reply text") {
+        // Enough of the answer to tell a blocked request from an empty one.
+        let shown: String = json.to_string().chars().take(600).collect();
+        warn!("The model answered with no reply text (HTTP {status}): {shown}");
+    }
     match (status, reply) {
         (200..=299, reply) => reply,
         (status, Err(message)) if json != Value::Null => Err(format!("HTTP {status}: {message}")),
@@ -2378,6 +2401,13 @@ fn draft_with_fallback_options(
             failures.push(format!("{}: no key saved", attempt.name));
             continue;
         };
+        if TOO_SMALL_PROVIDERS
+            .lock()
+            .is_ok_and(|skipped| skipped.contains(attempt.name))
+        {
+            failures.push(format!("{}: request too large for its limit", attempt.name));
+            continue;
+        }
         let left = time_left(extras.deadline);
         if left.is_zero() || (weak_draft.is_some() && left < TIME_FOR_ANOTHER_MODEL) {
             info!("Out of time for another model ({left:?} left), using the best draft so far");
@@ -2425,6 +2455,18 @@ fn draft_with_fallback_options(
                     "{} could not draft the reply, trying the next provider: {e}",
                     attempt.name
                 );
+                if e.starts_with("HTTP 413") {
+                    // The request is bigger than this provider's limit, and
+                    // every request is about the same size: asking again
+                    // only costs time.
+                    warn!(
+                        "{} cannot take a request this size, not asking it again this session",
+                        attempt.name
+                    );
+                    if let Ok(mut skipped) = TOO_SMALL_PROVIDERS.lock() {
+                        skipped.insert(attempt.name.to_string());
+                    }
+                }
                 failures.push(format!("{}: {e}", attempt.name));
             }
         }
@@ -2504,6 +2546,7 @@ pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
     // A position found in this picture (the input box) is clicked inside
     // whatever was captured: the window, or else the whole display.
     set_last_input_box(None);
+    crate::reply_box::remember_chat_window();
     match crate::watch::capture_front_window_jpeg() {
         Ok((bytes, area)) => {
             set_capture_area(Some(area));
@@ -2811,7 +2854,10 @@ fn draft_from_screen(
         }
         Err(e) => e,
     };
-    let Some(text) = &chat.transcript else {
+    // The chat's text without the picture: the window's own text on Windows,
+    // else what text recognition read. A provider that blocks the picture
+    // (an explicit chat) often still writes from the words.
+    let Some(text) = extras.window_text.as_ref().or(chat.transcript.as_ref()) else {
         return Err(failure);
     };
     info!("No model drafted from the screenshot ({failure}), trying the chat text alone");
@@ -4670,6 +4716,61 @@ mod tests {
         ] {
             let response = json!({ "choices": [{ "finish_reason": "stop", "message": { "content": valid } }] });
             assert_eq!(parse_reply(&response).unwrap(), valid);
+        }
+
+        // A reasoning model that used up its tokens right after the reply
+        // still wrote the whole reply: OpenRouter's free models did this on
+        // every draft one evening, and nothing was typed.
+        let whole = "You really know how to make a girl wait, don't you? What would you do first if I were there?";
+        let response =
+            json!({ "choices": [{ "finish_reason": "length", "message": { "content": whole } }] });
+        assert_eq!(parse_reply(&response).unwrap(), whole);
+    }
+
+    #[test]
+    fn a_provider_whose_limit_is_too_small_is_not_asked_again() {
+        // Groq's free tier answered this to every draft one evening.
+        let (small_url, small) = serve_once(
+            "413 Payload Too Large",
+            r#"{"error":{"message":"Request too large for model, please reduce your message size"}}"#,
+        );
+        let (ok_url, ok) = serve_once("200 OK", OK_BODY);
+        let (ok_again_url, ok_again) = serve_once("200 OK", OK_BODY);
+        let attempt = |name: &'static str, url: &str| Attempt {
+            name,
+            url: Box::leak(url.to_string().into_boxed_str()),
+            model: "m",
+            max_tokens: MAX_REPLY_TOKENS,
+            reasoning_effort: None,
+            key: Some("k".into()),
+        };
+        let small_name = "Too small for this test";
+        assert_eq!(
+            draft_with_fallback(
+                &[attempt(small_name, &small_url), attempt("Big", &ok_url)],
+                "QUJD"
+            )
+            .unwrap(),
+            "Hi Tarek, thanks."
+        );
+        small.join().unwrap();
+        ok.join().unwrap();
+        // The second draft never reaches the small provider: only the big one
+        // is served, and the test would hang if the small one were asked.
+        assert_eq!(
+            draft_with_fallback(
+                &[
+                    attempt(small_name, &small_url),
+                    attempt("Big", &ok_again_url)
+                ],
+                "QUJD"
+            )
+            .unwrap(),
+            "Hi Tarek, thanks."
+        );
+        ok_again.join().unwrap();
+        if let Ok(mut skipped) = TOO_SMALL_PROVIDERS.lock() {
+            skipped.remove(small_name);
         }
     }
 
