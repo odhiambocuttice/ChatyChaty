@@ -24,6 +24,25 @@ const GROQ_MAX_REPLY_TOKENS: u32 = 800;
 const OPENROUTER_MAX_REPLY_TOKENS: u32 = 4096;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// The most time one draft may take, from the shortcut to the reply, across
+/// every model, retry and rewrite. Operators answer live clients on a timer.
+const DRAFT_TIME_LIMIT: Duration = Duration::from_secs(60);
+
+/// Below this much time left, no new model is asked for a better draft: the
+/// best draft so far is typed instead.
+const TIME_FOR_ANOTHER_MODEL: Duration = Duration::from_secs(10);
+
+/// Below this much time left, a draft that needs a rewrite is not sent back
+/// to the model; the built-in safe fix is used where there is one.
+const TIME_FOR_A_REWRITE: Duration = Duration::from_secs(6);
+
+/// Time left before the draft's deadline (all of REQUEST_TIMEOUT without one).
+fn time_left(deadline: Option<std::time::Instant>) -> Duration {
+    deadline.map_or(REQUEST_TIMEOUT, |d| {
+        d.saturating_duration_since(std::time::Instant::now())
+    })
+}
+
 /// Normalized bounding box coordinates (0-1000 scale) of the chat input box detected on screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InputBoxCoords {
@@ -93,6 +112,8 @@ struct PromptExtras {
     /// The user was asked to open the client's photo and drafted again
     /// without it: write the reply anyway.
     photo_left_closed: bool,
+    /// When this draft must be done (DRAFT_TIME_LIMIT after it started).
+    deadline: Option<std::time::Instant>,
     style_samples: Vec<String>,
     /// For the three versions to choose from: how this one should differ.
     variant: Option<String>,
@@ -125,6 +146,7 @@ fn prompt_extras(variant: Option<&str>) -> PromptExtras {
         recent_ctas: recent_ctas(),
         recent_drafts: recent_drafts(RECENT_OPENINGS_CHECKED),
         photo_left_closed: photo_left_closed(),
+        deadline: Some(std::time::Instant::now() + DRAFT_TIME_LIMIT),
         style_samples: crate::chat_memory::style_samples(STYLE_SAMPLES_IN_PROMPT),
         variant: variant.map(str::to_string),
         window_text: WINDOW_TEXT.lock().ok().and_then(|g| g.clone()),
@@ -1053,6 +1075,7 @@ fn draft_from_hint(
     attempts: &[Attempt],
     hint: &str,
     avoid: Option<&str>,
+    deadline: Option<std::time::Instant>,
 ) -> Result<String, String> {
     let mut failures = Vec::new();
     for attempt in attempts {
@@ -1066,7 +1089,7 @@ fn draft_from_hint(
             hint,
             avoid,
         );
-        match request_reply(attempt.url, key, &body) {
+        match request_reply(attempt.url, key, &body, deadline) {
             Ok(text) => {
                 info!("Wrote the text from the voice hint with {}", attempt.name);
                 return Ok(text);
@@ -1937,9 +1960,18 @@ fn sanitize_extreme_kink(text: &str) -> String {
 
 /// Sends one request and returns the reply text. Any HTTP error, including a
 /// used-up limit (429) or no credits (402), is an `Err`.
-fn request_reply(url: &str, key: &str, body: &Value) -> Result<String, String> {
+fn request_reply(
+    url: &str,
+    key: &str,
+    body: &Value,
+    deadline: Option<std::time::Instant>,
+) -> Result<String, String> {
+    let timeout = REQUEST_TIMEOUT.min(time_left(deadline));
+    if timeout.is_zero() {
+        return Err("out of time for this draft".to_string());
+    }
     let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(REQUEST_TIMEOUT))
+        .timeout_global(Some(timeout))
         .http_status_as_error(false)
         .build()
         .into();
@@ -1988,7 +2020,7 @@ fn try_attempt_with_options(
         avoid,
         extras,
     );
-    match request_reply(attempt.url, key, &body) {
+    match request_reply(attempt.url, key, &body, extras.deadline) {
         Err(e) => {
             if let Some(draft) = e.strip_prefix("the reply used the word love: ") {
                 info!(
@@ -2001,7 +2033,7 @@ fn try_attempt_with_options(
                     attempt.reasoning_effort,
                     draft,
                 );
-                request_reply(attempt.url, key, &rewrite)
+                rewrite_reply(attempt.url, key, &rewrite, extras.deadline)
             } else if let Some(draft) = e
                 .strip_prefix("the reply copied the stock line ")
                 .and_then(|rest| rest.split_once("\": ").map(|(_, draft)| draft))
@@ -2016,7 +2048,7 @@ fn try_attempt_with_options(
                     attempt.reasoning_effort,
                     draft,
                 );
-                request_reply(attempt.url, key, &rewrite)
+                rewrite_reply(attempt.url, key, &rewrite, extras.deadline)
             } else if let Some(draft) = e.strip_prefix("the reply promised to meet in person: ") {
                 info!(
                     "{} agreed to meet, asking it to rewrite the reply as a deflection",
@@ -2028,7 +2060,7 @@ fn try_attempt_with_options(
                     attempt.reasoning_effort,
                     draft,
                 );
-                request_reply(attempt.url, key, &rewrite)
+                rewrite_reply(attempt.url, key, &rewrite, extras.deadline)
             } else if let Some(draft) = e.strip_prefix("the reply explicitly refused to meet: ") {
                 info!(
                     "{} explicitly refused to meet, asking it to rewrite the reply",
@@ -2040,7 +2072,7 @@ fn try_attempt_with_options(
                     attempt.reasoning_effort,
                     draft,
                 );
-                match request_reply(attempt.url, key, &rewrite) {
+                match rewrite_reply(attempt.url, key, &rewrite, extras.deadline) {
                     Ok(r) => Ok(r),
                     Err(_) => Ok(sanitize_meet_refusal(draft)),
                 }
@@ -2057,7 +2089,7 @@ fn try_attempt_with_options(
                     attempt.reasoning_effort,
                     draft,
                 );
-                match request_reply(attempt.url, key, &rewrite) {
+                match rewrite_reply(attempt.url, key, &rewrite, extras.deadline) {
                     Ok(r) => Ok(r),
                     Err(_) => Ok(sanitize_extreme_kink(draft)),
                 }
@@ -2072,7 +2104,7 @@ fn try_attempt_with_options(
                     attempt.reasoning_effort,
                     draft,
                 );
-                match request_reply(attempt.url, key, &rewrite) {
+                match rewrite_reply(attempt.url, key, &rewrite, extras.deadline) {
                     Ok(r) => Ok(r),
                     Err(_) => Ok(replace_cliche_position_cta(draft)),
                 }
@@ -2086,6 +2118,20 @@ fn try_attempt_with_options(
 
 /// Tries each provider in order and returns the first reply. Fails only when
 /// all of them fail, with each one's reason.
+/// Sends a rewrite request when there is time left for one; otherwise fails,
+/// so the caller uses its built-in safe fix or the next model.
+fn rewrite_reply(
+    url: &str,
+    key: &str,
+    body: &Value,
+    deadline: Option<std::time::Instant>,
+) -> Result<String, String> {
+    if time_left(deadline) < TIME_FOR_A_REWRITE {
+        return Err("no time left to rewrite the draft".to_string());
+    }
+    request_reply(url, key, body, deadline)
+}
+
 fn draft_with_fallback_options(
     attempts: &[Attempt],
     input: &ChatInput,
@@ -2102,6 +2148,12 @@ fn draft_with_fallback_options(
             failures.push(format!("{}: no key saved", attempt.name));
             continue;
         };
+        let left = time_left(extras.deadline);
+        if left.is_zero() || (weak_draft.is_some() && left < TIME_FOR_ANOTHER_MODEL) {
+            info!("Out of time for another model ({left:?} left), using the best draft so far");
+            failures.push(format!("{}: out of time", attempt.name));
+            break;
+        }
         match try_attempt_with_options(attempt, key, input, hint, avoid, extras) {
             Ok(reply) => {
                 let weak = check_quality
@@ -2449,6 +2501,7 @@ pub fn draft_reply_from_jpeg_with_options(
     hint: Option<&str>,
     avoid: Option<&str>,
 ) -> Result<String, String> {
+    let deadline = Some(std::time::Instant::now() + DRAFT_TIME_LIMIT);
     let attempts = provider_attempts()?;
     // Re-roll (a rejected draft to avoid): start with the model after the one
     // that wrote it, so the new draft comes from a different model.
@@ -2458,13 +2511,15 @@ pub fn draft_reply_from_jpeg_with_options(
         rotate_after(&mut attempts, last.as_deref());
     }
     let chat = crate::screen_text::read_chat(jpeg);
-    let drafted = draft_text_first(&attempts, jpeg, &chat, hint, avoid, &prompt_extras(None));
+    let mut extras = prompt_extras(None);
+    extras.deadline = deadline;
+    let drafted = draft_text_first(&attempts, jpeg, &chat, hint, avoid, &extras);
     // With a hint, any input box works: when there is no chat to reply to,
     // write what the hint asks for instead.
     let reply = match (drafted, hint.map(str::trim).filter(|h| !h.is_empty())) {
         (Err(e), Some(h)) if e == "no conversation on screen" => {
             info!("No conversation on screen, writing from the voice hint alone");
-            draft_from_hint(&attempts, h, avoid)?
+            draft_from_hint(&attempts, h, avoid, deadline)?
         }
         (drafted, _) => drafted?,
     };
@@ -2571,6 +2626,7 @@ pub fn draft_for_typing(
     if !choose {
         return draft_reply_from_jpeg_with_options(jpeg, hint, avoid).map(|reply| vec![reply]);
     }
+    let draft_deadline = std::time::Instant::now() + DRAFT_TIME_LIMIT;
     let attempts = provider_attempts()?;
     // Read the chat text once for all three versions.
     let chat = crate::screen_text::read_chat(jpeg);
@@ -2596,6 +2652,7 @@ pub fn draft_for_typing(
         let avoid = avoid.map(str::to_string);
         let mut extras = prompt_extras(*variant);
         extras.tone = tone.map(str::to_string);
+        extras.deadline = Some(draft_deadline);
         std::thread::spawn(move || {
             let result = draft_text_first(
                 &attempts,
@@ -2614,12 +2671,11 @@ pub fn draft_for_typing(
     let mut slots: Vec<Option<Result<String, String>>> = vec![None; CHOICE_VARIANTS.len()];
     let mut deadline: Option<std::time::Instant> = None;
     loop {
-        let message = match deadline {
-            None => receiver.recv().ok(),
-            Some(d) => receiver
-                .recv_timeout(d.saturating_duration_since(std::time::Instant::now()))
-                .ok(),
-        };
+        // Never wait past the draft's own deadline.
+        let until = deadline.map_or(draft_deadline, |d| d.min(draft_deadline));
+        let message = receiver
+            .recv_timeout(until.saturating_duration_since(std::time::Instant::now()))
+            .ok();
         let Some((index, result)) = message else {
             break;
         };
@@ -2647,7 +2703,7 @@ pub fn draft_for_typing(
         return match hint.map(str::trim).filter(|h| !h.is_empty()) {
             Some(h) if error == "no conversation on screen" => {
                 info!("No conversation on screen, writing from the voice hint alone");
-                let reply = draft_from_hint(&attempts, h, None)?;
+                let reply = draft_from_hint(&attempts, h, None, Some(draft_deadline))?;
                 accept_draft(&reply);
                 Ok(vec![reply])
             }
@@ -2892,6 +2948,66 @@ mod tests {
         ] {
             assert!(!instructions().contains(example), "{example}");
         }
+    }
+
+    #[test]
+    fn a_draft_never_runs_past_its_deadline() {
+        use std::time::Instant;
+        // No time left: no request is sent at all.
+        let past = Some(Instant::now());
+        let error = request_reply("http://127.0.0.1:9/", "k", &json!({}), past).unwrap_err();
+        assert_eq!(error, "out of time for this draft");
+        // A rewrite needs a few seconds; without them the safe fix is used.
+        let almost = Some(Instant::now() + Duration::from_secs(2));
+        assert!(
+            rewrite_reply("http://127.0.0.1:9/", "k", &json!({}), almost)
+                .unwrap_err()
+                .contains("no time left")
+        );
+        assert_eq!(time_left(None), REQUEST_TIMEOUT);
+        assert!(DRAFT_TIME_LIMIT <= Duration::from_secs(60));
+    }
+
+    #[test]
+    fn with_a_weak_draft_in_hand_no_new_model_is_asked_when_time_is_short() {
+        let (url, server) = serve_once(
+            "200 OK",
+            r#"{"choices":[{"message":{"content":"Nice. What else?"}}]}"#,
+        );
+        let attempts = [
+            Attempt {
+                name: "first",
+                url: &url,
+                model: "m",
+                max_tokens: 100,
+                reasoning_effort: None,
+                key: Some("k".to_string()),
+            },
+            // Never contacted: only 8 seconds would be left.
+            Attempt {
+                name: "second",
+                url: "http://127.0.0.1:9/",
+                model: "m",
+                max_tokens: 100,
+                reasoning_effort: None,
+                key: Some("k".to_string()),
+            },
+        ];
+        let extras = PromptExtras {
+            deadline: Some(std::time::Instant::now() + Duration::from_secs(8)),
+            ..Default::default()
+        };
+        let reply = draft_with_fallback_options(
+            &attempts,
+            &ChatInput::Screenshot("QUJD".to_string()),
+            None,
+            None,
+            &extras,
+            true,
+        )
+        .unwrap();
+        server.join().unwrap();
+        assert_eq!(reply, "Nice. What else?");
     }
 
     #[test]
@@ -3488,6 +3604,7 @@ mod tests {
             &url,
             "test-key",
             &build_request("m", MAX_REPLY_TOKENS, None, "QUJD"),
+            None,
         )
         .unwrap();
         let request = server.join().unwrap();
