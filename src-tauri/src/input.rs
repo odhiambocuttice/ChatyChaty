@@ -37,48 +37,82 @@ pub fn get_display_size(app_handle: &AppHandle) -> (f64, f64) {
     (1440.0, 900.0)
 }
 
-/// Automatically moves the mouse to the center of the detected chat input box,
-/// clicks to focus the field, and restores the mouse back to where it was.
-pub fn focus_input_box(app_handle: &AppHandle, coords: crate::reply::InputBoxCoords) {
+/// Shown when, after the click, keyboard focus is still not in a text field:
+/// typing would go into the wrong place.
+pub const NOT_IN_A_TEXT_FIELD: &str =
+    "The chat's typing box is not focused. Click into it, then draft again.";
+
+/// Puts keyboard focus in the chat's typing box before the draft is typed,
+/// then puts the mouse back where it was.
+///
+/// The box is found through the accessibility tree first (`reply_box`: exact,
+/// and independent of the model), else at the position the draft came with
+/// (`coords`: the model's INPUT_BOX line, or the placeholder read off the
+/// screen). Fails when the accessibility tree shows that focus is still not in
+/// a text field, so nothing is typed into the wrong place; without a tree
+/// (a remote desktop), typing goes ahead as before.
+pub fn focus_reply_box(
+    app_handle: &AppHandle,
+    coords: Option<crate::reply::InputBoxCoords>,
+) -> Result<(), String> {
     let settings = crate::settings::get_settings(app_handle);
     if !settings.auto_focus_input {
-        return;
+        return Ok(());
     }
 
-    let (norm_x, norm_y) = coords.center_normalized();
-    // The position is within the captured picture: one window (where it sat on
-    // screen) or else the whole display.
-    let (click_x, click_y) = match crate::reply::last_capture_area() {
-        Some((x, y, w, h)) => (
-            (x + norm_x * w).round() as i32,
-            (y + norm_y * h).round() as i32,
-        ),
-        None => {
-            let (disp_w, disp_h) = get_display_size(app_handle);
-            (
-                (norm_x * disp_w).round() as i32,
-                (norm_y * disp_h).round() as i32,
-            )
+    // The front app is read on the main thread (macOS), the tree from here.
+    let front_app =
+        crate::clipboard::with_enigo(app_handle, |_| Ok(crate::clipboard::front_app_pid()))?;
+    let target = match crate::reply_box::find_reply_box(front_app) {
+        Some(found) => {
+            log::info!("Found the chat's typing box through accessibility: {found:?}");
+            Some(found.center())
         }
+        None => coords.map(|coords| {
+            let (norm_x, norm_y) = coords.center_normalized();
+            // The position is within the captured picture: one window (where
+            // it sat on screen) or else the whole display.
+            let (click_x, click_y) = match crate::reply::last_capture_area() {
+                Some((x, y, w, h)) => (
+                    (x + norm_x * w).round() as i32,
+                    (y + norm_y * h).round() as i32,
+                ),
+                None => {
+                    let (disp_w, disp_h) = get_display_size(app_handle);
+                    (
+                        (norm_x * disp_w).round() as i32,
+                        (norm_y * disp_h).round() as i32,
+                    )
+                }
+            };
+            log::info!(
+                "No typing box in the accessibility tree; clicking where the draft placed it ({click_x}, {click_y})"
+            );
+            (click_x, click_y)
+        }),
     };
-    let (disp_w, disp_h) = get_display_size(app_handle);
 
-    log::info!(
-        "Auto-focusing chat input box at screen coords ({click_x}, {click_y}) [norm: ({norm_x:.3}, {norm_y:.3}), display: {disp_w}x{disp_h}]"
-    );
+    if let Some((click_x, click_y)) = target {
+        let _ = crate::clipboard::with_enigo(app_handle, move |enigo| {
+            use enigo::{Button, Coordinate, Direction};
+            let orig_pos = enigo.location().ok();
+            let _ = enigo.move_mouse(click_x, click_y, Coordinate::Abs);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            let _ = enigo.button(Button::Left, Direction::Click);
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            if let Some((ox, oy)) = orig_pos {
+                let _ = enigo.move_mouse(ox, oy, Coordinate::Abs);
+            }
+            Ok(())
+        });
+        // Give the app a moment to move focus before checking it.
+        std::thread::sleep(std::time::Duration::from_millis(60));
+    }
 
-    let _ = crate::clipboard::with_enigo(app_handle, move |enigo| {
-        use enigo::{Button, Coordinate, Direction};
-        let orig_pos = enigo.location().ok();
-        let _ = enigo.move_mouse(click_x, click_y, Coordinate::Abs);
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        let _ = enigo.button(Button::Left, Direction::Click);
-        std::thread::sleep(std::time::Duration::from_millis(40));
-        if let Some((ox, oy)) = orig_pos {
-            let _ = enigo.move_mouse(ox, oy, Coordinate::Abs);
-        }
-        Ok(())
-    });
+    match crate::reply_box::focus_is_editable(front_app) {
+        Some(false) => Err(NOT_IN_A_TEXT_FIELD.to_string()),
+        _ => Ok(()),
+    }
 }
 
 /// Spreads the gap around `base_ms` so the rhythm is uneven, the way a real

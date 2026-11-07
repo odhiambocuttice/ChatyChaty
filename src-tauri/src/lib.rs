@@ -17,6 +17,7 @@ mod overlay;
 mod phone;
 pub mod portable;
 mod reply;
+mod reply_box;
 mod screen_text;
 mod secure_input;
 mod settings;
