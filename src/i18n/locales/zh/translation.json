@@ -256,6 +256,7 @@
     "drafting": "Writing reply...",
     "hinting": "Listening...",
     "done": "Done",
+    "finish": "Stop and type what you said",
     "dock": {
       "draft": "AI Reply",
       "draftTooltip": "Read the chat and type a reply",
