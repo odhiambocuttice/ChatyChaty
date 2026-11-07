@@ -18,8 +18,8 @@
         justify-content: center;
         gap: 24px;
         font-family: system-ui, sans-serif;
-        background: #111;
-        color: #eee;
+        background: #2c2b29;
+        color: #fbfbfb;
       }
       #rec {
         width: 60vmin;
@@ -28,14 +28,22 @@
         border: 0;
         font-size: 8vmin;
         color: #fff;
-        background: #2f7d32;
+        background: #d97757;
         touch-action: manipulation;
       }
+      /* Recording: the darker brand orange with a pulsing ring. */
       #rec.on {
-        background: #c62828;
+        background: #c96442;
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        50% {
+          box-shadow: 0 0 0 4vmin rgba(217, 119, 87, 0.3);
+        }
       }
       #rec:disabled {
-        background: #444;
+        background: #4a4845;
+        animation: none;
       }
       #status {
         font-size: 5vmin;
@@ -58,6 +66,8 @@
       let wakeLock = null;
       // A newer page took the connection (close code 4000). Wait for a tap.
       let replaced = false;
+      // The link's key is outdated (a new QR code was made). Stop for good.
+      let oldLink = false;
       // Shown until the microphone starts.
       let micError = null;
       // The running microphone: { stream, ctx }.
@@ -76,8 +86,10 @@
         btn.textContent = state === "recording" ? S.stop : S.record;
         btn.classList.toggle("on", state === "recording");
         btn.disabled =
-          !replaced && (!connected || state === "transcribing" || busy);
-        if (replaced) statusEl.textContent = S.replaced;
+          oldLink ||
+          (!replaced && (!connected || state === "transcribing" || busy));
+        if (oldLink) statusEl.textContent = S.oldLink;
+        else if (replaced) statusEl.textContent = S.replaced;
         else if (!connected) statusEl.textContent = S.reconnecting;
         else if (micError) statusEl.textContent = micError;
         else if (state === "recording") statusEl.textContent = S.recording;
@@ -116,9 +128,33 @@
             return;
           }
           render();
-          setTimeout(connect, 2000);
+          // A hidden page stays disconnected until it is shown again.
+          if (document.visibilityState !== "visible") return;
+          checkLinkThenReconnect(sock);
         };
         sock.onerror = () => sock.close();
+      }
+
+      // A refused connection looks the same as a dropped one. Ask the computer
+      // whether this link is still current: if not (403), turn the microphone
+      // off, stop retrying and ask for the new QR code. Otherwise retry.
+      async function checkLinkThenReconnect(sock) {
+        try {
+          const res = await fetch("/ping?t=" + encodeURIComponent(TOKEN), {
+            cache: "no-store",
+          });
+          if (res.status === 403) {
+            oldLink = true;
+            stopMic();
+            render();
+            return;
+          }
+        } catch (_) {
+          /* computer unreachable: retry below */
+        }
+        setTimeout(() => {
+          if (document.visibilityState === "visible" && ws === sock) connect();
+        }, 2000);
       }
 
       function sendAudio(buffer) {
@@ -246,11 +282,41 @@ registerProcessor("pcm16", Pcm16);
           /* not critical */
         }
       }
+      // Leaving the page (another app, the home screen, a locked screen, a
+      // closed tab) turns the microphone off, so the phone never listens in the
+      // background. A recording in progress is stopped first, so the words
+      // already spoken are still typed. The next tap starts the microphone again.
+      function releaseMic() {
+        if (state === "recording" && ws && ws.readyState === WebSocket.OPEN)
+          ws.send('{"type":"toggle"}');
+        stopMic();
+        // The next tap waits for fresh audio before it presses the button.
+        audioSent = false;
+        // Disconnect too, so Chatelle knows the phone is gone and records with
+        // the computer's microphone instead.
+        if (ws && ws.readyState <= WebSocket.OPEN) ws.close();
+        if (wakeLock) {
+          wakeLock.release().catch(() => {});
+          wakeLock = null;
+        }
+      }
       document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState !== "visible") return;
+        if (document.visibilityState !== "visible") {
+          releaseMic();
+          return;
+        }
         requestWakeLock();
         resumeAudio();
+        if (
+          !replaced &&
+          !oldLink &&
+          (!ws || ws.readyState >= WebSocket.CLOSING)
+        ) {
+          connect();
+          render();
+        }
       });
+      window.addEventListener("pagehide", releaseMic);
 
       btn.addEventListener("click", async () => {
         if (replaced) {
@@ -267,6 +333,11 @@ registerProcessor("pcm16", Pcm16);
           try {
             await ensureMic();
             micError = null;
+            // The page was left while the microphone was starting.
+            if (document.visibilityState !== "visible") {
+              stopMic();
+              return;
+            }
           } catch (err) {
             const blocked =
               err &&

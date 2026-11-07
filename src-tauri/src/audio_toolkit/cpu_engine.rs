@@ -1,4 +1,4 @@
-//! transcribe.cpp inside Handy's own process, for the small CPU-only models:
+//! transcribe.cpp inside Chatelle's own process, for the small CPU-only models:
 //! Silero VAD and the spoken-language detector. Everything that can touch a
 //! GPU runs in the engine worker instead (`engine_supervisor`).
 
@@ -13,7 +13,7 @@ use transcribe_cpp::BackendMask;
 pub(crate) fn init_cpu_backends() -> Result<()> {
     static INIT: OnceLock<Result<(), String>> = OnceLock::new();
     INIT.get_or_init(|| {
-        // Route native/ggml diagnostics into Handy's log; must precede any
+        // Route native/ggml diagnostics into Chatelle's log; must precede any
         // native call.
         transcribe_cpp::init_logging();
         transcribe_cpp::init_backends_with(None::<&Path>, BackendMask::CPU)

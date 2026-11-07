@@ -744,6 +744,35 @@ pub fn change_auto_focus_input_setting(app: AppHandle, enabled: bool) -> Result<
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_choose_before_typing_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.choose_before_typing = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_dock_labels_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.dock_labels = enabled;
+    settings::write_settings(&app, settings);
+    // Resize the dock for the new width.
+    crate::utils::update_overlay_position(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_paste_with_clipboard_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.paste_with_clipboard = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_typing_speed_setting(app: AppHandle, speed: TypingSpeed) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.typing_speed = speed;

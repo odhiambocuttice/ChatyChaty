@@ -28,6 +28,10 @@ export const TypingSpeed: React.FC<TypingSpeedProps> = React.memo(
         value: "fast",
         label: t("settings.basics.typingSpeed.options.fast"),
       },
+      {
+        value: "ultra",
+        label: t("settings.basics.typingSpeed.options.ultra"),
+      },
     ];
 
     return (

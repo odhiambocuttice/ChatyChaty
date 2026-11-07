@@ -2,6 +2,7 @@ mod actions;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
+mod chat_memory;
 pub mod cli;
 mod clipboard;
 mod commands;
@@ -16,6 +17,7 @@ mod overlay;
 mod phone;
 pub mod portable;
 mod reply;
+mod screen_text;
 mod secure_input;
 mod settings;
 mod shortcut;
@@ -51,7 +53,7 @@ use crate::settings::get_settings;
 
 // Global atomic to store the file log level filter
 // We use u8 to store the log::LevelFilter as a number
-pub static FILE_LOG_LEVEL: AtomicU8 = AtomicU8::new(log::LevelFilter::Debug as u8);
+pub static FILE_LOG_LEVEL: AtomicU8 = AtomicU8::new(log::LevelFilter::Warn as u8);
 
 /// When `true`, log records are also forwarded to the webview via the
 /// `log://log` event for the debug panel's live log viewer. Gated on debug
@@ -97,6 +99,14 @@ fn build_console_filter() -> env_filter::Filter {
 
 fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
+        // Become a regular app first: an Accessory app (no Dock icon) cannot
+        // take focus, so the window would open behind the front app.
+        #[cfg(target_os = "macos")]
+        {
+            if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+                log::error!("Failed to set activation policy to Regular: {}", e);
+            }
+        }
         if let Err(e) = main_window.unminimize() {
             log::error!("Failed to unminimize webview window: {}", e);
         }
@@ -106,11 +116,13 @@ fn show_main_window(app: &AppHandle) {
         if let Err(e) = main_window.set_focus() {
             log::error!("Failed to focus webview window: {}", e);
         }
+        // Bring Chatelle in front of the app that was active when the tray
+        // menu was clicked.
         #[cfg(target_os = "macos")]
         {
-            if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
-                log::error!("Failed to set activation policy to Regular: {}", e);
-            }
+            use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
+            NSRunningApplication::currentApplication()
+                .activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
         }
         return;
     }
@@ -174,6 +186,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // The frontend is responsible for calling the `initialize_enigo` command
     // after onboarding completes. This avoids triggering permission dialogs
     // on macOS before the user is ready.
+
+    // The user's tone samples, used by every reply draft.
+    match portable::app_data_dir(app_handle) {
+        Ok(dir) => {
+            let _ = std::fs::create_dir_all(&dir);
+            chat_memory::init(dir);
+        }
+        Err(e) => log::warn!("No app data folder for the tone samples: {e}"),
+    }
 
     // Initialize the managers. The audio recorder receives the streaming router
     // explicitly, so always-on microphone startup can wire live-preview frames
@@ -433,6 +454,9 @@ fn build_specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_show_tray_icon_setting,
             shortcut::change_show_floating_dock_setting,
             shortcut::change_auto_focus_input_setting,
+            shortcut::change_paste_with_clipboard_setting,
+            shortcut::change_dock_labels_setting,
+            shortcut::change_choose_before_typing_setting,
             shortcut::handy_keys::start_handy_keys_recording,
             shortcut::handy_keys::stop_handy_keys_recording,
             secure_input::get_secure_input_status,
@@ -451,19 +475,19 @@ fn build_specta_builder() -> Builder<tauri::Wry> {
             commands::trigger_draft_reply,
             commands::trigger_draft_reply_hint_start,
             commands::trigger_draft_reply_hint_stop,
-            commands::trigger_regenerate_reply,
+            commands::trigger_draft_reply_hint_toggle,
+            commands::choose_draft,
+            commands::regenerate_choices,
+            commands::retone_choices,
             commands::trigger_transcribe_toggle,
             commands::show_dock_overlay,
             commands::hide_dock_overlay,
             commands::get_log_text,
             commands::get_log_dir_path,
             commands::set_log_level,
-            commands::open_log_dir,
             commands::initialize_enigo,
             commands::initialize_shortcuts,
             commands::models::get_model_status,
-            commands::models::get_speech_models,
-            commands::models::change_speech_model_setting,
             commands::models::download_model,
             commands::models::cancel_download,
             commands::audio::update_microphone_mode,
@@ -500,9 +524,9 @@ pub fn run(cli_args: CliArgs) {
     // Avoid ggml-metal residency-set teardown assertions when a native engine
     // outlives the Tauri shutdown sequence (#1902). This must happen before
     // transcribe-cpp initializes its Metal device. Advanced users can restore
-    // upstream residency behavior with HANDY_METAL_RESIDENCY=1.
+    // upstream residency behavior with CHATELLE_METAL_RESIDENCY=1.
     #[cfg(target_os = "macos")]
-    if std::env::var("HANDY_METAL_RESIDENCY").as_deref() == Ok("1") {
+    if std::env::var("CHATELLE_METAL_RESIDENCY").as_deref() == Ok("1") {
         // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
         // inherited value as well when explicitly opting back in.
         std::env::remove_var("GGML_METAL_NO_RESIDENCY");
@@ -560,16 +584,35 @@ pub fn run(cli_args: CliArgs) {
                     Target::new(if let Some(data_dir) = portable::data_dir() {
                         TargetKind::Folder {
                             path: data_dir.join("logs"),
-                            file_name: Some("handy".into()),
+                            file_name: Some("chatelle".into()),
                         }
                     } else {
                         TargetKind::LogDir {
-                            file_name: Some("handy".into()),
+                            file_name: Some("chatelle".into()),
                         }
                     })
+                    // Only what a bug report needs: Chatelle's own messages up
+                    // to the chosen level, and other libraries' errors. No
+                    // library chatter.
                     .filter(|metadata| {
                         let file_level = FILE_LOG_LEVEL.load(Ordering::Relaxed);
+                        let own = metadata.target().starts_with(env!("CARGO_CRATE_NAME"));
                         metadata.level() <= level_filter_from_u8(file_level)
+                            && (own || metadata.level() <= log::Level::Error)
+                    })
+                    // Time, level and message: no module paths, which only
+                    // describe how the app is built.
+                    .format(|out, message, record| {
+                        let now = time::OffsetDateTime::now_utc().format(
+                            time::macros::format_description!(
+                                "[year]-[month]-[day] [hour]:[minute]:[second]"
+                            ),
+                        );
+                        out.finish(format_args!(
+                            "[{}][{}] {message}",
+                            now.unwrap_or_default(),
+                            record.level()
+                        ))
                     }),
                     // Stream logs to the webview (via the `log://log` event) so the
                     // debug panel's live log viewer can show them in real time. Only
@@ -589,7 +632,7 @@ pub fn run(cli_args: CliArgs) {
         builder = builder.plugin(tauri_nspanel::init());
     }
 
-    // Single-instance forwards CLI args to an already-running Handy and exits.
+    // Single-instance forwards CLI args to an already-running Chatelle and exits.
     builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
         if args.iter().any(|a| a == "--toggle-transcription") {
             signal_handle::send_transcription_input(app, "transcribe", "CLI");
@@ -611,6 +654,7 @@ pub fn run(cli_args: CliArgs) {
     #[allow(unused_mut)]
     let mut app = builder
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -621,11 +665,14 @@ pub fn run(cli_args: CliArgs) {
         ))
         .manage(cli_args.clone())
         .setup(move |app| {
+            // Before anything reads the settings: bring them over from the
+            // old app ID.
+            portable::move_data_from_old_app_id(app.handle());
             #[cfg(target_os = "windows")]
             log::info!(
-                "Vulkan layer policy: VK_LOADER_LAYERS_DISABLE={:?}, HANDY_KEEP_VULKAN_IMPLICIT_LAYERS={}",
+                "Vulkan layer policy: VK_LOADER_LAYERS_DISABLE={:?}, CHATELLE_KEEP_VULKAN_IMPLICIT_LAYERS={}",
                 std::env::var_os("VK_LOADER_LAYERS_DISABLE"),
-                utils::env_flag_enabled("HANDY_KEEP_VULKAN_IMPLICIT_LAYERS"),
+                utils::env_flag_enabled("CHATELLE_KEEP_VULKAN_IMPLICIT_LAYERS"),
             );
 
             specta_builder.mount_events(app);
@@ -634,7 +681,7 @@ pub fn run(cli_args: CliArgs) {
             // for portable mode (redirects WebView2 cache to portable Data dir)
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
-                    .title("Chatelle")
+                    .title("Chatelle Beta")
                     .inner_size(utils::MAIN_WINDOW_SIZE.0, utils::MAIN_WINDOW_SIZE.1)
                     .min_inner_size(utils::MAIN_WINDOW_SIZE.0, utils::MAIN_WINDOW_SIZE.1)
                     .resizable(true)
@@ -669,7 +716,7 @@ pub fn run(cli_args: CliArgs) {
             // Disable WebView2 browser accelerators (F5, F6, Ctrl+F, F12, ...).
             // A settings window has no use for them, and pressing F6 while
             // recording a shortcut was reported to turn the whole window white
-            // (cjpais/Handy#1940), likely by triggering WebView2 focus cycling.
+            //, likely by triggering WebView2 focus cycling.
             // DevTools stays enabled; only the F12 accelerator is lost.
             #[cfg(target_os = "windows")]
             {
@@ -706,7 +753,12 @@ pub fn run(cli_args: CliArgs) {
             }
 
             let tauri_log_level: tauri_plugin_log::LogLevel = settings.log_level.into();
-            let file_log_level: log::Level = tauri_log_level.into();
+            let mut file_log_level: log::Level = tauri_log_level.into();
+            // Outside debug mode the log file keeps only warnings and errors:
+            // what went wrong, not a running account of how the app works.
+            if !settings.debug_mode {
+                file_log_level = file_log_level.min(log::Level::Warn);
+            }
             // Store the file log level in the atomic for the filter to use
             FILE_LOG_LEVEL.store(file_log_level.to_level_filter() as u8, Ordering::Relaxed);
             // Only forward logs to the webview while debug mode is on (the live log
@@ -720,7 +772,7 @@ pub fn run(cli_args: CliArgs) {
 
             // Secure Input monitor (macOS): detects stuck secure input that
             // silently blocks keyed shortcuts, warns the user, and activates
-            // the Carbon fallback. See secure_input.rs and issue #1578.
+            // the Carbon fallback. See secure_input.rs.
             secure_input::init(&app_handle);
 
             // Populate the overlay-enabled cache from initial settings so the

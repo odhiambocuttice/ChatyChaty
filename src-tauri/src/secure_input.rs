@@ -4,7 +4,7 @@
 //! "Secure Keyboard Entry", a stuck `loginwindow`), CGEventTaps stop receiving
 //! KeyDown/KeyUp events while FlagsChanged still flows. The handy-keys
 //! implementation is tap-based, so keyed shortcuts (e.g. Option+Space) die
-//! silently while modifier-only shortcuts keep working. See issue #1578.
+//! silently while modifier-only shortcuts keep working.
 //!
 //! This module:
 //! - polls `IsSecureEventInputEnabled()` and tracks state transitions

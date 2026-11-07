@@ -26,7 +26,7 @@ mod platform {
                 "-s",
                 service,
                 "-a",
-                "handy",
+                "chatelle",
                 "-w",
                 key,
             ])
@@ -100,7 +100,7 @@ mod platform {
 
     pub fn write(target: &str, key: &str) -> Result<(), String> {
         let mut target = wide(target);
-        let mut user = wide("handy");
+        let mut user = wide("chatelle");
         let mut blob: Vec<u8> = key.encode_utf16().flat_map(u16::to_le_bytes).collect();
         let credential = CREDENTIALW {
             Type: CRED_TYPE_GENERIC,
@@ -139,8 +139,27 @@ mod platform {
     }
 }
 
+/// Saved names began with "handy-" before the rename to Chatelle.
+const LEGACY_PREFIX: &str = "handy-";
+
+/// The name a key was saved under before the rename, if it had one.
+fn legacy_name(service: &str) -> Option<String> {
+    service
+        .strip_prefix("chatelle-")
+        .map(|rest| format!("{LEGACY_PREFIX}{rest}"))
+}
+
 pub fn read(service: &str) -> Option<String> {
-    platform::read(service)
+    if let Some(key) = platform::read(service) {
+        return Some(key);
+    }
+    // A key saved before the rename: move it to the new name, once.
+    let legacy = legacy_name(service)?;
+    let key = platform::read(&legacy)?;
+    if platform::write(service, &key).is_ok() {
+        let _ = platform::delete(&legacy);
+    }
+    Some(key)
 }
 
 pub fn write(service: &str, key: &str) -> Result<(), String> {
@@ -148,5 +167,23 @@ pub fn write(service: &str, key: &str) -> Result<(), String> {
 }
 
 pub fn delete(service: &str) -> Result<(), String> {
+    // Also remove a copy left under the old name, so it can't come back.
+    if let Some(legacy) = legacy_name(service) {
+        let _ = platform::delete(&legacy);
+    }
     platform::delete(service)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn renamed_keys_know_their_old_name() {
+        assert_eq!(
+            legacy_name("chatelle-gemini-key").as_deref(),
+            Some("handy-gemini-key")
+        );
+        assert_eq!(legacy_name("other"), None);
+    }
 }

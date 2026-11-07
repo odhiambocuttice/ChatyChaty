@@ -54,7 +54,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
 
   const hover =
     tone === "neutral" ? "hover:bg-wash" : "hover:bg-logo-primary/10";
-  const selected = tone === "neutral" ? "bg-line" : "bg-logo-primary/20";
+  // Every selected option uses the brand orange, like the other controls.
+  const selected = "bg-logo-primary/20";
 
   const selectedOption = options.find(
     (option) => option.value === selectedValue,

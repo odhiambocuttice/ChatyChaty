@@ -5,6 +5,7 @@ export { ShowOverlay } from "./ShowOverlay";
 export { StartHidden } from "./StartHidden";
 export { AutostartToggle } from "./AutostartToggle";
 export { TypingSpeed } from "./TypingSpeed";
+export { PasteWithClipboard } from "./PasteWithClipboard";
+export { ChooseBeforeTyping } from "./ChooseBeforeTyping";
 export { ReplyProviderKeys } from "./ReplyProviderKeys";
 export { RemoteReplyPanel } from "./RemoteReplyPanel";
-export { SpeechModelPicker } from "./SpeechModelPicker";

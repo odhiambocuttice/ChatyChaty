@@ -28,16 +28,12 @@
             "description": "يقرأ المحادثة على الشاشة ويكتب رداً في حقل الإدخال النشط."
           },
           "draft_reply_hint": {
-            "name": "Draft Reply with Voice Hint",
-            "description": "Hold to speak a voice guidance hint, then release to draft a customized reply."
-          },
-          "regenerate_reply": {
-            "name": "Regenerate Reply",
-            "description": "Erases the last typed reply and drafts a fresh alternative."
+            "name": "Guide the AI Reply",
+            "description": "Hold and say what you want to reply. Let go, and Chatelle writes it."
           },
           "watch_chat": {
-            "name": "Watch Chat",
-            "description": "Watches the open chat and notifies your Telegram when a new message arrives."
+            "name": "Message Alerts",
+            "description": "Watches the open chat and tells your Telegram when a new message comes in."
           }
         },
         "errors": {
@@ -52,12 +48,17 @@
         "placeholder": "اختر الميكروفون...",
         "loading": "جاري التحميل...",
         "phone": "Phone (Wi-Fi)",
-        "phoneScan": "Scan this code with your phone's camera and open the page in Chrome.",
         "phoneConnected": "Phone connected",
         "phoneWaiting": "Waiting for the phone…",
         "phoneFirewall": "The first time, Windows may ask to allow Chatelle on private networks. Allow it.",
-        "phoneNewCode": "New code",
-        "phoneCertNote": "Chrome warns that the connection is not private. Tap Advanced, then Proceed. This is expected."
+        "phoneNewCode": "New QR code",
+        "phoneSteps": {
+          "title": "Use your phone as the microphone",
+          "wifi": "Connect your phone to the same Wi-Fi as this computer.",
+          "scan": "Scan this code with your phone's camera and open the link in the Chrome browser.",
+          "advanced": "If the Chrome browser shows a warning page, tap Advanced, then Proceed to connect.",
+          "record": "On your phone, tap the orange button and speak."
+        }
       }
     },
     "advanced": {
@@ -95,6 +96,14 @@
             "right": "Right"
           }
         }
+      },
+      "chooseBeforeTyping": {
+        "label": "Choose Before Typing",
+        "description": "AI Reply and Guide the AI Reply give you three replies to pick from. When off, Chatelle types the first reply straight away."
+      },
+      "pasteWithClipboard": {
+        "label": "Paste with Clipboard",
+        "description": "Paste the text in one go instead of typing it key by key. Faster, but pages that block pasting refuse it."
       }
     },
     "basics": {
@@ -105,7 +114,8 @@
         "options": {
           "slow": "Slow",
           "normal": "Normal",
-          "fast": "Fast"
+          "fast": "Fast",
+          "ultra": "Ultra"
         }
       }
     },
@@ -113,8 +123,8 @@
       "title": "الميكروفون"
     },
     "replyKeys": {
-      "title": "Draft Reply Keys",
-      "description": "Draft reply sends a screenshot of the chat to the first of these providers with a key. Add at least one free key. Keys are kept in the system key store, not in Chatelle's settings.",
+      "title": "API Keys",
+      "description": "To write a reply, Chatelle sends the chat to the first service below that has a key. Add at least one free key. Keys are kept in your computer's secure key store.",
       "placeholder": "Paste API key",
       "saved": "Key saved",
       "save": "Save",
@@ -124,8 +134,12 @@
     "tabs": {
       "label": "Settings",
       "shortcuts": "Shortcuts",
-      "model": "Model",
-      "logs": "Logs"
+      "logs": "Logs",
+      "buttons": "Buttons",
+      "microphone": "Microphone",
+      "general": "General",
+      "telegram": "Telegram",
+      "keys": "API Keys"
     },
     "groups": {
       "keyboardShortcuts": "Keyboard shortcuts",
@@ -136,23 +150,23 @@
       "speechModel": "Speech model",
       "modelStatus": "Status",
       "log": "Log",
-      "quickActions": "Quick Actions"
+      "buttonOptions": "Options"
     },
     "speechModel": {
       "liveDetails": "{{size}} MB · Types as you speak",
       "afterStopDetails": "{{size}} MB · Types after you stop, with fewer errors"
     },
     "logs": {
-      "hint": "When something goes wrong, copy the log and paste it into your report.",
+      "hint": "The log records what Chatelle did and the errors it hit, so the developer can find and fix the problem.",
       "empty": "No log yet.",
       "copy": "Copy log",
       "copied": "Copied",
       "refresh": "Refresh",
-      "openFolder": "Open folder"
+      "share": "Something not working? Copy the log and send it to the Chatelle developer."
     },
     "remoteReply": {
-      "title": "Telegram Remote Reply",
-      "description": "Watch an active chat while away and receive new messages and draft replies on Telegram.",
+      "title": "Telegram Alerts",
+      "description": "When you are away, Chatelle watches the open chat and sends new messages and suggested replies to your Telegram.",
       "botToken": "Bot Token",
       "botTokenPlaceholder": "Paste Telegram bot token",
       "saveToken": "Save",
@@ -161,33 +175,53 @@
       "botConnected": "Bot: @{{username}}",
       "statusPaired": "Paired with your Telegram",
       "statusUnpaired": "Ready to pair",
-      "pairInstructions": "Open Telegram, start your bot, and send this code to connect:",
       "pairCommand": "/pair {{code}}",
-      "copyCommand": "Copy Command",
+      "copyCommand": "Copy",
       "copied": "Copied!",
       "unlink": "Unlink Account",
-      "disclaimer": "Note: Your laptop stays awake while watching. Click your chat's input box, then press your Watch shortcut to start."
+      "disclaimer": "Your computer stays awake while alerts are on. Click the chat's message box, then press your Message Alerts shortcut to start.",
+      "status": "Status",
+      "steps": {
+        "title": "How to connect",
+        "find": "Search for {{bot}} and tap Start.",
+        "yourBot": "your bot",
+        "send": "Send it this message:",
+        "wait": "Wait a few seconds. Status changes to “Connected to your Telegram”.",
+        "phone": "Install Telegram on your phone and sign in with your phone number."
+      },
+      "newPhone": "New phone or number? Click Unlink, then follow the steps again from the new phone.",
+      "setup": {
+        "title": "How to set up Telegram alerts",
+        "intro": "Telegram alerts send new chat messages and suggested replies to your phone while you are away. First make your own Telegram bot. It is free and takes about two minutes.",
+        "botFather": "In Telegram, tap the search bar at the top of the Chats screen and type BotFather. Open @BotFather (the one with the blue tick) and tap Start. On this computer, you can click the button instead.",
+        "newBot": "Send it the message /newbot.",
+        "names": "Type a name for your bot, like My Chatelle. Then type a username. The username must be unique across all of Telegram and must end in “bot”. Add your own name or some numbers to make it unique, like ann_chatelle_2026_bot. If BotFather says the username is taken, try another one.",
+        "token": "BotFather replies with a token, a long code that looks like this: 91568140:AA2c-RWQV1fW-_TgQYWyz-e3TuurQ. Copy it.",
+        "paste": "Paste the token here and click Save. The steps to connect your phone then appear.",
+        "private": "Keep the token private. Anyone who has it can control your bot.",
+        "openBotFather": "Open BotFather"
+      }
     },
     "floatingDock": {
-      "title": "Floating Action Dock",
-      "description": "Show an always-on-top floating toolbar with 1-click buttons for Draft, Hint, Re-roll, and Dictate over your apps."
+      "title": "Floating Buttons",
+      "description": "Keep Chatelle's buttons on top of your other apps: AI Reply, Voice Reply, Guide AI and Alerts."
     },
     "autoFocusInput": {
-      "title": "Auto-Focus Chat Input",
-      "description": "Automatically detect and click the chat message field so you don't need to move your mouse before drafting."
+      "title": "Click the Message Box for Me",
+      "description": "Chatelle finds the chat's message box and clicks it, so you don't have to before it writes a reply."
     },
     "quickActions": {
-      "title": "One-Click Actions",
-      "draft": "Draft Reply",
-      "draftDesc": "Reads screen & types reply",
-      "hint": "Voice Hint",
-      "hintDesc": "Speak guidance to steer draft",
-      "reroll": "Re-roll Reply",
-      "rerollDesc": "Erases draft & writes new",
-      "dictate": "Dictate Voice",
-      "dictateDesc": "Transcribes what you speak",
-      "watch": "Watch Chat",
-      "watchDesc": "Alerts Telegram on message"
+      "title": "One-Click Buttons",
+      "draft": "AI Reply",
+      "draftDesc": "Reads the chat, types a reply",
+      "hint": "Guide the AI Reply",
+      "hintDesc": "Tell AI what the reply should say",
+      "dictate": "Voice Reply",
+      "dictateDesc": "Types what you say",
+      "watch": "Message Alerts",
+      "watchDesc": "Tells your Telegram about new messages",
+      "hintStop": "Done, Write Reply",
+      "hintStopDesc": "Stop talking and write the reply"
     }
   },
   "common": {
@@ -211,32 +245,41 @@
     "typeFailed": "Text could not be typed into the active application.",
     "modelDownloadFailed": "Failed to download the speech model",
     "phoneNotConnected": "Phone not connected — scan the QR code in Settings",
-    "draftReplyFailedTitle": "Draft Reply Failed",
-    "watchErrorTitle": "Watch Mode Failed",
-    "watchStarted": "Watch Mode Started",
-    "watchStopped": "Watch Mode Stopped"
+    "draftReplyFailedTitle": "Could Not Write a Reply",
+    "watchErrorTitle": "Message Alerts Did Not Start",
+    "watchStarted": "Message Alerts On",
+    "watchStopped": "Message Alerts Off"
   },
   "overlay": {
     "transcribing": "جاري التفريغ...",
     "loadingModel": "جارٍ تحميل النموذج...",
-    "drafting": "Drafting reply...",
-    "hinting": "Speaking hint...",
+    "drafting": "Writing reply...",
+    "hinting": "Listening...",
     "done": "Done",
     "dock": {
-      "draft": "Draft",
-      "draftTooltip": "Draft reply to chat on screen",
-      "hint": "Hint",
-      "hintTooltip": "Speak a voice hint for the reply",
-      "reroll": "Re-roll",
-      "rerollTooltip": "Erase previous reply and draft an alternative",
-      "dictate": "Dictate",
-      "dictateTooltip": "Transcribe your voice into text",
-      "watch": "Watch",
-      "watching": "Watching",
-      "watchTooltip": "Watch chat and alert Telegram",
+      "draft": "AI Reply",
+      "draftTooltip": "Read the chat and type a reply",
+      "hint": "Guide AI",
+      "hintTooltip": "Tell AI what the reply should say",
+      "dictate": "Voice Reply",
+      "dictateTooltip": "Type what you say",
+      "watch": "Alerts",
+      "watching": "Alerts On",
+      "watchTooltip": "Tell my Telegram about new messages",
       "collapse": "Collapse",
-      "expand": "Show Action Dock",
-      "hide": "Close dock"
+      "expand": "Show buttons",
+      "hide": "Hide buttons"
+    },
+    "choose": {
+      "title": "Pick a reply",
+      "regenerate": "Show three new replies",
+      "cancel": "Cancel (Esc)",
+      "tone": {
+        "shorter": "Shorter",
+        "longer": "Longer",
+        "funnier": "Funnier",
+        "serious": "More serious"
+      }
     }
   },
   "secureInput": {
@@ -246,7 +289,6 @@
     "blockedNoCulprit_other": "يحظر macOS مؤقتًا {{count}} اختصارات",
     "recorderBlockedWithCulprit": "قد يمنع {{name}} تغيير الاختصارات",
     "recorderBlockedNoCulprit": "يمنع macOS مؤقتًا تغيير الاختصارات",
-    "learnMore": "كيفية الإصلاح",
     "recorderBlocked": "لا يمكن تسجيل الاختصارات الآن — يحجب Secure Input في macOS أحداث المفاتيح. عالج تحذير Secure Input أولاً.",
     "dismiss": "تجاهل"
   },
@@ -284,14 +326,19 @@
     "waiting": "في الانتظار"
   },
   "phonePage": {
-    "record": "Record",
-    "stop": "Stop",
+    "record": "Tap to record",
+    "stop": "Tap to stop",
     "connected": "Connected",
     "reconnecting": "Reconnecting…",
     "recording": "Recording…",
     "transcribing": "Transcribing…",
     "micDenied": "Chrome blocked the microphone. Allow it in the site settings and reload.",
     "micFailed": "Could not start the microphone. Reload the page and try again.",
-    "replaced": "Opened in another tab. Tap to reconnect here."
+    "replaced": "Opened in another tab. Tap to reconnect here.",
+    "oldLink": "This link is out of date. Close this tab and scan the new QR code in Chatelle."
+  },
+  "app": {
+    "beta": "Beta",
+    "version": "Version {{version}} Beta"
   }
 }

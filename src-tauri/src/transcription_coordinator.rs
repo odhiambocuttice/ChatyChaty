@@ -908,7 +908,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------------
-    // Sequence-level regression coverage for issue #1539.
+    // Sequence-level regression coverage.
     //
     // Under X11 key auto-repeat, holding a push-to-talk key does not emit one
     // long press. It emits the initial press followed by a stream of

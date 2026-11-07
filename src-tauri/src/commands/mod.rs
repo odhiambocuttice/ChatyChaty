@@ -5,7 +5,6 @@ pub mod phone;
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
 use crate::utils::cancel_current_operation;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_opener::OpenerExt;
 
 #[tauri::command]
 #[specta::specta]
@@ -119,9 +118,30 @@ pub fn trigger_draft_reply_hint_stop(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn trigger_regenerate_reply(app: AppHandle) -> Result<(), String> {
-    crate::actions::trigger_regenerate_reply(&app);
+pub fn trigger_draft_reply_hint_toggle(app: AppHandle) -> Result<(), String> {
+    crate::actions::trigger_draft_reply_hint_toggle(&app);
     Ok(())
+}
+
+/// Replaces the drafts on offer with three new ones.
+#[tauri::command]
+#[specta::specta]
+pub fn regenerate_choices(app: AppHandle) -> Result<(), String> {
+    crate::actions::regenerate_choices(&app)
+}
+
+/// Rewrites the drafts on offer with a tone button's change.
+#[tauri::command]
+#[specta::specta]
+pub fn retone_choices(app: AppHandle, tone: String) -> Result<(), String> {
+    crate::actions::retone_choices(&app, &tone)
+}
+
+/// Types the draft the user picked from the three on offer.
+#[tauri::command]
+#[specta::specta]
+pub fn choose_draft(app: AppHandle, index: u32) -> Result<(), String> {
+    crate::actions::choose_draft(&app, index as usize)
 }
 
 #[tauri::command]
@@ -154,7 +174,7 @@ pub fn hide_dock_overlay(app: AppHandle) -> Result<(), String> {
 pub fn get_log_text(app: AppHandle) -> Result<String, String> {
     let path = crate::portable::app_log_dir(&app)
         .map_err(|e| format!("Failed to get log directory: {}", e))?
-        .join("handy.log");
+        .join("chatelle.log");
     match std::fs::read_to_string(&path) {
         Ok(text) => Ok(text),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
@@ -185,20 +205,6 @@ pub fn set_log_level(app: AppHandle, level: LogLevel) -> Result<(), String> {
     let mut settings = get_settings(&app);
     settings.log_level = level;
     write_settings(&app, settings);
-
-    Ok(())
-}
-
-#[specta::specta]
-#[tauri::command]
-pub fn open_log_dir(app: AppHandle) -> Result<(), String> {
-    let log_dir = crate::portable::app_log_dir(&app)
-        .map_err(|e| format!("Failed to get log directory: {}", e))?;
-
-    let path = log_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open log directory: {}", e))?;
 
     Ok(())
 }

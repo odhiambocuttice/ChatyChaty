@@ -48,7 +48,10 @@ export const LogViewer: React.FC = () => {
 
   return (
     <div className="py-4 space-y-3">
-      <p className="text-sm text-ink-3">{t("settings.logs.hint")}</p>
+      <div className="space-y-1.5 text-sm">
+        <p className="font-medium">{t("settings.logs.share")}</p>
+        <p className="text-ink-3">{t("settings.logs.hint")}</p>
+      </div>
       <textarea
         ref={box}
         readOnly
@@ -64,9 +67,6 @@ export const LogViewer: React.FC = () => {
         </Button>
         <Button variant="secondary" size="md" onClick={refresh}>
           {t("settings.logs.refresh")}
-        </Button>
-        <Button variant="ghost" size="md" onClick={() => commands.openLogDir()}>
-          {t("settings.logs.openFolder")}
         </Button>
       </div>
     </div>

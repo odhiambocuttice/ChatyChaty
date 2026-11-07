@@ -1,4 +1,4 @@
-//! Pauses whatever is playing while Handy listens, and starts it again after.
+//! Pauses whatever is playing while Chatelle listens, and starts it again after.
 //!
 //! `pause` pauses only media that is playing right now and returns a record of
 //! what it paused. `resume` plays exactly that again, so music the user had

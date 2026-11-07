@@ -1,11 +1,11 @@
 [package]
-name = "handy"
-version = "0.9.8"
-description = "Handy"
-authors = ["cjpais"]
+name = "chatelle"
+version = "0.1.0"
+description = "Chatelle"
+authors = ["Chatelle"]
 edition = "2021"
 license = "MIT"
-default-run = "handy"
+default-run = "chatelle"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
@@ -16,7 +16,7 @@ incremental = true # Compile your binary in smaller steps.
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "handy_app_lib"
+name = "chatelle_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -36,12 +36,14 @@ tauri-plugin-log = "2.7.1"
 tauri-plugin-opener = "2.5.2"
 tauri-plugin-store = "2.4.1"
 tauri-plugin-os = "2.3.2"
+tauri-plugin-clipboard-manager = "=2.3.2"
 tauri-plugin-macos-permissions = "2.3.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1.0.95"
 hound = "3.5.1"
 log = "0.4.25"
+time = { version = "0.3", features = ["formatting", "macros"] }
 env_filter = "0.1.0"
 tokio = { version = "1.43.0", features = ["net", "io-util", "sync", "time", "macros"] }
 earshot = "1.2.2"
@@ -105,6 +107,8 @@ windows = { version = "0.61.3", features = [
   "Win32_Graphics_Gdi",
   "Win32_Security_Credentials",
   "Win32_Storage_Xps",
+  "Win32_System_Com",
+  "Win32_UI_Accessibility",
   "Win32_System_Power",
   "Win32_UI_WindowsAndMessaging",
 ] }
@@ -123,7 +127,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg"] }
 # buys nothing on ARM — ALL_VARIANTS is an x86 concept, so a DL build there is
 # just a single portable CPU module shipped as a DLL. So ARM links transcribe-cpp
 # STATICALLY (no features = static CPU-only): the one CPU backend is compiled into
-# handy.exe and we ship zero DLLs, which sidesteps the installer's per-DLL
+# chatelle.exe and we ship zero DLLs, which sidesteps the installer's per-DLL
 # signtool verify entirely. CI pins -DGGML_NATIVE=OFF (see build.yml) so the
 # static build targets a portable ARM baseline, not the build runner's CPU.
 [target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
@@ -152,6 +156,9 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-service-management = "0.3.2"
+# On-device text recognition, to read the chat from the screenshot.
+objc2-vision = { version = "0.3", default-features = false, features = ["std", "VNRequestHandler", "VNRequest", "VNRecognizeTextRequest", "VNObservation", "VNTypes", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSString", "NSError"] }
 core-graphics = "0.25"
 core-foundation = "0.10"
 
@@ -171,7 +178,7 @@ transcribe-cpp = { version = "0.4.0", default-features = false, features = [
 # tao #1231 (removed window subclassing), which left the thread event target's
 # WNDPROC falling through to DefSubclassProc. On a no-longer-subclassed window
 # that returns 0, so WM_QUERYENDSESSION answered FALSE and vetoed Windows
-# shutdown (Handy #1710). `handy` = 07f3742b + a cherry-pick of tao #1274
+# shutdown. The branch = 07f3742b + a cherry-pick of tao #1274
 # (DefSubclassProc → DefWindowProcW). Repoint at upstream once #1274 merges.
 #
 # tao-macros must be patched to the SAME rev even though nothing here depends on

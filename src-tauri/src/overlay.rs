@@ -54,14 +54,37 @@ const OVERLAY_HEIGHT: f64 = 50.0;
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
-const OVERLAY_DOCK_WIDTH: f64 = 440.0;
+const OVERLAY_DOCK_WIDTH: f64 = 540.0;
 const OVERLAY_DOCK_HEIGHT: f64 = 60.0;
 
-/// Overlay window size (logical) for a given UI state.
-fn overlay_dimensions(state: &str) -> (f64, f64) {
+// On the left or right edge the dock stacks its buttons in a column, with
+// labels or as icons only (narrower, and its bottom buttons stack too).
+const OVERLAY_DOCK_VERTICAL_WIDTH: f64 = 142.0;
+const OVERLAY_DOCK_VERTICAL_HEIGHT: f64 = 238.0;
+const OVERLAY_DOCK_ICONS_WIDTH: f64 = 70.0;
+const OVERLAY_DOCK_ICONS_HEIGHT: f64 = 298.0;
+
+// The three drafts to pick from, stacked as cards.
+const OVERLAY_CHOOSING_WIDTH: f64 = 440.0;
+const OVERLAY_CHOOSING_HEIGHT: f64 = 370.0;
+
+/// Whether the overlay is showing the dock, so a position change can resize
+/// it between the row and the column layout.
+static OVERLAY_IS_DOCK: AtomicBool = AtomicBool::new(false);
+
+/// Overlay window size (logical) for a given UI state, screen edge and
+/// dock label setting.
+fn overlay_dimensions(state: &str, position: OverlayPosition, dock_labels: bool) -> (f64, f64) {
+    let side = matches!(position, OverlayPosition::Left | OverlayPosition::Right);
     match state {
         "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
+        "dock" if side && dock_labels => {
+            (OVERLAY_DOCK_VERTICAL_WIDTH, OVERLAY_DOCK_VERTICAL_HEIGHT)
+        }
+        "dock" if side => (OVERLAY_DOCK_ICONS_WIDTH, OVERLAY_DOCK_ICONS_HEIGHT),
         "dock" => (OVERLAY_DOCK_WIDTH, OVERLAY_DOCK_HEIGHT),
+        "hinting" => (360.0, 54.0),
+        "choosing" => (OVERLAY_CHOOSING_WIDTH, OVERLAY_CHOOSING_HEIGHT),
         _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
@@ -150,8 +173,8 @@ fn configure_layer_shell_surface(
 /// Returns true if layer shell was successfully initialized, false otherwise
 #[cfg(target_os = "linux")]
 fn init_gtk_layer_shell(overlay_window: &tauri::webview::WebviewWindow) -> bool {
-    if utils::env_flag_enabled("HANDY_NO_GTK_LAYER_SHELL") {
-        debug!("Skipping GTK layer shell init (HANDY_NO_GTK_LAYER_SHELL is enabled)");
+    if utils::env_flag_enabled("CHATELLE_NO_GTK_LAYER_SHELL") {
+        debug!("Skipping GTK layer shell init (CHATELLE_NO_GTK_LAYER_SHELL is enabled)");
         return false;
     }
 
@@ -266,7 +289,7 @@ fn is_mouse_within_monitor(
 /// The Bottom anchor uses the macOS work area (visibleFrame) so the overlay
 /// tracks the Dock — above it when shown, at the screen edge when hidden.
 /// This relies on tauri 2.11's work_area.position.y fix (#14655), the same
-/// bug that led PR #969 to abandon work_area for full monitor bounds. Top and
+/// bug that once led to abandoning work_area for full monitor bounds. Top and
 /// the other platforms keep full monitor bounds plus the fixed offsets
 /// (work_area is unreliable on Wayland; Windows' offset clears the taskbar).
 ///
@@ -428,9 +451,12 @@ fn place_windows_overlay(
     let monitor = get_monitor_with_cursor(app_handle)
         .ok_or_else(|| "failed to determine the monitor containing the cursor".to_string())?;
     let text_scale = windows_text_scale_factor();
+    // The work area leaves out the taskbar, so a bottom (or side) overlay sits
+    // above it instead of on top of it.
+    let work_area = monitor.work_area();
     let (x, y, width, height) = windows_overlay_bounds(
-        *monitor.position(),
-        *monitor.size(),
+        work_area.position,
+        work_area.size,
         monitor.scale_factor(),
         text_scale,
         logical_width,
@@ -579,7 +605,7 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     // Linux the monitor/cursor lookups hit GDK/Xlib on the process's shared X11
     // connection, which is only safe from the GTK main thread — running them on
     // a background thread corrupts the connection and hard-crashes the app
-    // (issue #227). Hop to the main thread on every platform to keep the
+    //. Hop to the main thread on every platform to keep the
     // geometry path uniform (a no-op cost on Windows, and it also keeps macOS's
     // NSScreen access main-thread-correct). run_on_main_thread runs the closure
     // inline when already on the main thread, so this never deadlocks.
@@ -590,7 +616,11 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
 
 fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
     // Size the overlay for this state (compact vs. streaming), then position it.
-    let (width, height) = overlay_dimensions(state);
+    let (width, height) = {
+        let s = settings::get_settings(app_handle);
+        overlay_dimensions(state, s.overlay_position, s.dock_labels)
+    };
+    OVERLAY_IS_DOCK.store(state == "dock", Ordering::Relaxed);
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         // Invalidate any delayed hide still in flight from a previous session
         // (see `hide_recording_overlay`).
@@ -709,6 +739,17 @@ pub fn show_transcribing_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "transcribing");
 }
 
+/// Shows the voice hint recording overlay window
+pub fn show_hinting_overlay(app_handle: &AppHandle) {
+    phone::notify_state(app_handle, PhoneState::Recording);
+    show_overlay_state(app_handle, "hinting");
+}
+
+/// Shows the drafts to choose from
+pub fn show_choosing_overlay(app_handle: &AppHandle) {
+    show_overlay_state(app_handle, "choosing");
+}
+
 /// Shows the drafting overlay window
 pub fn show_drafting_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "drafting");
@@ -728,6 +769,17 @@ pub fn update_overlay_position(app_handle: &AppHandle) {
 }
 
 fn update_overlay_position_on_main(app_handle: &AppHandle) {
+    // The dock changes shape between edges (row vs. column), so resize it too,
+    // unless the change turned the dock or the overlay off.
+    if OVERLAY_IS_DOCK.load(Ordering::Relaxed) {
+        let s = settings::get_settings(app_handle);
+        if s.show_floating_dock && s.overlay_style != OverlayStyle::None {
+            show_overlay_state_on_main(app_handle, "dock");
+        } else {
+            force_hide_overlay(app_handle);
+        }
+        return;
+    }
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         #[cfg(target_os = "linux")]
         if LAYER_SHELL_ACTIVE.load(Ordering::SeqCst) {
@@ -746,7 +798,10 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
             } else {
                 "recording"
             };
-            let (width, height) = overlay_dimensions(state);
+            let (width, height) = {
+                let s = settings::get_settings(app_handle);
+                overlay_dimensions(state, s.overlay_position, s.dock_labels)
+            };
             if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
                 log::error!("Failed to update recording overlay position: {error}");
             }
@@ -790,6 +845,8 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
 /// the close dock button or turns off the floating dock in settings.
 pub fn force_hide_overlay(app_handle: &AppHandle) {
     phone::notify_state(app_handle, PhoneState::Idle);
+    // A closed dock must not come back when a setting repositions the overlay.
+    OVERLAY_IS_DOCK.store(false, Ordering::Relaxed);
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         // Snapshot before doing anything observable, so any show that lands
         // after this point invalidates the delayed hide below.
@@ -834,7 +891,7 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // guard a hidden overlay's WebKit subprocess still
     // processes every event. Each event drives some kind of WebKit
     // C++ allocation that accumulates without bound (mechanism not
-    // directly characterized; see issue #1279 for the investigation).
+    // directly characterized).
     // For users with `overlay_style: none` (the Linux default) this skip
     // eliminates the upstream driver of that accumulation.
     if !OVERLAY_ENABLED.load(Ordering::Relaxed) {
@@ -844,7 +901,7 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // Throttle to ~30 FPS. Even with the overlay enabled, the raw audio
     // callback fires far faster than the UI needs; capping emission rate
     // cuts the per-frame `eval_script`/IPC volume that drives the wry
-    // memory growth in issue #1279 (upstream tauri-apps/wry#1489).
+    // memory growth (tauri-apps/wry#1489).
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

@@ -352,25 +352,6 @@ impl TranscriptionManager {
             .unwrap_or_else(|| self.model_manager.selected().streams)
     }
 
-    /// Drop the loaded model so the next load picks up the one now selected.
-    /// Waits for a load under way first, so it cannot land after the unload.
-    pub fn unload_model(&self) {
-        {
-            let mut is_loading = self.is_loading.lock().unwrap();
-            while *is_loading {
-                is_loading = self.loading_condvar.wait(is_loading).unwrap();
-            }
-        }
-        let _ = self.engine.unload();
-        let _ = self.app_handle.emit(
-            "model-state-changed",
-            ModelStateEvent {
-                event_type: "unloaded".to_string(),
-                error: None,
-            },
-        );
-    }
-
     /// Whether a live streaming run is currently in flight.
     pub fn is_streaming(&self) -> bool {
         self.stream_active.load(Ordering::Acquire)
@@ -536,9 +517,9 @@ impl TranscriptionManager {
     /// batch run of `audio`. Every transcription finishes here.
     fn complete(&self, started: Instant, audio: Vec<f32>, live: Option<String>) -> Result<String> {
         #[cfg(debug_assertions)]
-        if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
+        if std::env::var("CHATELLE_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
-                "Simulated transcription failure (HANDY_FORCE_TRANSCRIPTION_FAILURE)"
+                "Simulated transcription failure (CHATELLE_FORCE_TRANSCRIPTION_FAILURE)"
             ));
         }
 

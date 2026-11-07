@@ -5,7 +5,7 @@
   /* Near-opaque app surface (theme.css --color-background at 98%). Auto-flips
      light/dark with --color-background, so no dark-mode override is needed. */
   --s-surface: color-mix(in srgb, var(--color-background) 98%, transparent);
-  /* Accent = logo pink; flips automatically via --color-logo-primary. */
+  /* Accent = logo orange; flips automatically via --color-logo-primary. */
   --s-accent: var(--color-logo-primary);
   /* The rest come from theme.css, which already follows the theme setting. */
   --s-accent-soft: color-mix(
@@ -110,7 +110,7 @@
   /* Never wider than the window: an unaccounted content zoom degrades to a
      narrower card instead of clipping. 2px = our border (no border-box reset). */
   max-width: calc(100vw - 2px);
-  border-radius: 24px;
+  border-radius: 9px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -146,11 +146,11 @@
 }
 .scard.open {
   width: var(--ov-open-w);
-  border-radius: 16px;
+  border-radius: 9px;
 }
 .scard.working {
   width: var(--ov-work-w);
-  border-radius: 18px;
+  border-radius: 9px;
 }
 
 /* Compact form: two fixed widths so the recording→working change is an animatable
@@ -166,11 +166,102 @@
   width: var(--ov-work-w);
 }
 
+/* Three drafts to pick from: a header, then one card per draft. */
+.scard.choosing {
+  animation: none;
+  width: min(440px, calc(100vw - 16px));
+  border-radius: 9px;
+  padding: 8px;
+  gap: 6px;
+}
+.schoose-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 0 6px;
+}
+.schoose-regenerate {
+  margin-left: auto;
+}
+.schoose-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.stones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 6px 4px;
+}
+.stone {
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--s-border);
+  font-family: var(--s-font);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.stone:hover {
+  border-color: var(--s-accent);
+  color: var(--s-accent);
+}
+.schoice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--s-border);
+  background: transparent;
+  color: var(--color-text);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+.schoice:hover {
+  background: var(--color-wash, rgba(255, 255, 255, 0.08));
+  border-color: var(--s-accent);
+}
+.schoice-num {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
+}
+.schoice-text {
+  font-size: 12px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.scard.hinting {
+  animation: none;
+  width: min(360px, calc(100vw - 16px));
+  border-radius: 9px;
+}
+
 /* Floating Action Dock */
 .scard.dock {
   animation: none;
-  width: min(440px, calc(100vw - 16px));
-  border-radius: 24px;
+  /* As wide as its buttons, so there is no gap after the last one. */
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  border-radius: 9px;
   padding: 4px;
 }
 
@@ -188,7 +279,7 @@
   gap: 4px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 16px;
+  border-radius: 7px;
   padding: 5px 8px;
   color: var(--color-text);
   font-size: 12px;
@@ -207,21 +298,42 @@
   transform: scale(0.96);
 }
 
-.sdock-btn-primary {
-  background: color-mix(in srgb, var(--color-logo-primary) 12%, transparent);
-  border-color: color-mix(in srgb, var(--color-logo-primary) 30%, transparent);
-  color: var(--color-logo-primary);
-  font-weight: 600;
-}
-
-.sdock-btn-primary:hover {
-  background: color-mix(in srgb, var(--color-logo-primary) 22%, transparent);
-}
-
+/* Alerts while it is on: the brand orange, so "on" never looks like hover. */
 .sdock-btn.active {
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.35);
-  color: #22c55e;
+  background: var(--s-accent-soft);
+  border-color: var(--s-accent);
+}
+
+/* Each action's icon sits on a tile so it reads at a glance. Monochrome: the
+   tile is a tint of the text colour, never an accent. */
+.sdock-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  color: var(--s-accent);
+}
+.sdock-ico svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+}
+.sdock-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--s-accent);
+  animation: sdock-pulse 1.4s ease-in-out infinite;
+}
+@keyframes sdock-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.sdock-btn {
+  gap: 7px;
 }
 
 .sdock-icon {
@@ -244,21 +356,84 @@
 
 .sdock-icon-btn {
   background: transparent;
-  border: none;
-  color: var(--s-muted);
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+  border: 1px solid transparent;
+  color: var(--color-text);
+  opacity: 0.7;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 11px;
+  transition:
+    opacity 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.sdock-icon-btn svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.25;
 }
 
 .sdock-icon-btn:hover {
-  color: var(--color-text);
+  opacity: 1;
   background: var(--color-wash, rgba(255, 255, 255, 0.08));
+  border-color: var(--s-border);
+}
+
+.sdock-icon-btn:active {
+  transform: scale(0.94);
+}
+
+/* Left/right edge: the dock is a column. overlay.rs sizes the window to match
+   (OVERLAY_DOCK_VERTICAL_*). */
+.ov-stage.left .scard.dock,
+.ov-stage.right .scard.dock {
+  width: 128px;
+  border-radius: 9px;
+  padding: 6px;
+}
+.ov-stage.left .sdock,
+.ov-stage.right .sdock {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.ov-stage.left .sdock-actions,
+.ov-stage.right .sdock-actions {
+  justify-content: center;
+  margin-left: 0;
+  border-left: none;
+  border-top: 1px solid var(--s-hair);
+  padding-left: 0;
+  padding-top: 4px;
+  margin-top: 2px;
+  gap: 4px;
+}
+.ov-stage.left .sdock-icon-btn,
+.ov-stage.right .sdock-icon-btn {
+  flex: 1;
+}
+
+/* Side dock, icons only: a narrow column; hover a button for its name. */
+.ov-stage.left .scard.dock.icons-only,
+.ov-stage.right .scard.dock.icons-only {
+  width: auto;
+}
+.scard.dock.icons-only .sdock-label {
+  display: none;
+}
+.scard.dock.icons-only .sdock-btn {
+  justify-content: center;
+  padding: 5px;
+}
+.ov-stage.left .scard.dock.icons-only .sdock-actions,
+.ov-stage.right .scard.dock.icons-only .sdock-actions {
+  flex-direction: column;
 }
 
 .sdock-collapsed {
@@ -273,7 +448,7 @@
 .sdock-expand-btn {
   background: transparent;
   border: none;
-  font-size: 18px;
+  color: var(--color-text);
   cursor: pointer;
   width: 100%;
   height: 100%;
@@ -283,15 +458,21 @@
 }
 
 .sdock-done-btn {
-  background: var(--color-logo-primary);
-  color: #fff;
+  background: var(--color-text);
+  color: var(--s-surface);
   border: none;
   font-size: 12px;
   font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 12px;
+  padding: 4px 12px;
+  border-radius: 7px;
   cursor: pointer;
   margin-right: 6px;
+  transition: all 150ms ease;
+}
+
+.sdock-done-btn:hover {
+  opacity: 0.85;
+  transform: scale(1.03);
 }
 
 .sdot-pulse {
@@ -312,8 +493,33 @@
 .shint-label {
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-logo-primary);
+  color: var(--color-text);
   white-space: nowrap;
+}
+
+/* Voice hint pill: label, waveform and buttons in one row with even gaps,
+   instead of the compact pill's three fixed columns, which are too narrow
+   for the Done button and let the label run into the waveform. */
+.sbase.shint-row {
+  display: flex;
+  gap: 12px;
+  padding: 0 8px 0 12px;
+}
+.shint-row .sbase-l {
+  gap: 8px;
+  padding-left: 0;
+  flex: 1;
+  min-width: 0;
+}
+.shint-row .shint-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shint-row .swave {
+  padding-right: 0;
+}
+.shint-row .sdock-done-btn {
+  margin-right: 0;
 }
 
 /* text region — auto-height open via grid-rows trick; region fades as a whole */
@@ -541,18 +747,42 @@
 }
 
 /* working state (transcribing / polishing) — spinner + label */
-.sspinner {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  border: 2px solid var(--s-hair);
-  border-top-color: var(--s-accent);
-  animation: sspin 0.7s linear infinite;
+/* Working indicator: three dots that swell and shrink in turn. */
+.sdots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   flex: none;
 }
-@keyframes sspin {
-  to {
-    transform: rotate(1turn);
+.sdots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--s-accent);
+  transform: scale(0.35);
+  animation: sdots-pulse 1.2s ease-in-out infinite;
+}
+.sdots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.sdots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes sdots-pulse {
+  0%,
+  100% {
+    transform: scale(0.35);
+    opacity: 0.6;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sdots span {
+    animation: none;
+    transform: none;
   }
 }
 .swork-label {

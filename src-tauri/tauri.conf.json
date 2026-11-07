@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Chatelle",
-  "version": "0.9.8",
-  "identifier": "com.odhiambocuttice.chatelle",
+  "version": "0.1.0",
+  "identifier": "com.chatelle.app",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -50,7 +50,7 @@
           "libssl3t64 | libssl3"
         ],
         "files": {
-          "/usr/lib/Handy": "transcribe-libs"
+          "/usr/lib/Chatelle": "transcribe-libs"
         }
       },
       "rpm": {
@@ -62,7 +62,7 @@
           "type": "none"
         },
         "files": {
-          "/usr/lib/Handy": "transcribe-libs"
+          "/usr/lib/Chatelle": "transcribe-libs"
         }
       },
       "appimage": {
@@ -73,7 +73,7 @@
       }
     },
     "windows": {
-      "signCommand": "trusted-signing-cli -e https://eus.codesigning.azure.net/ -a CJ-Signing -c cjpais-dev -d Handy %1",
+      "signCommand": "trusted-signing-cli -e https://eus.codesigning.azure.net/ -a %AZURE_SIGNING_ACCOUNT% -c %AZURE_CERTIFICATE_PROFILE% -d Chatelle %1",
       "nsis": {
         "template": "nsis/installer.nsi",
         "installerIcon": "icons/icon.ico"

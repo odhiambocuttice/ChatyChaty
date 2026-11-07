@@ -81,29 +81,226 @@ pub fn extract_input_box(text: &str) -> (String, Option<InputBoxCoords>) {
     (text.to_string(), None)
 }
 
-/// Details of the most recently drafted reply, allowing instant regeneration / re-rolling
-/// without repeating previous suggestions or losing voice hint context.
-#[derive(Clone, Debug)]
-pub struct LastDraftInfo {
-    pub jpeg_bytes: Option<Vec<u8>>,
-    pub reply: String,
-    pub hint: Option<String>,
+/// The provider that wrote the last draft, so Re-roll can start with the next one.
+static LAST_DRAFT_PROVIDER: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// What a request adds to the reply prompt beyond the screenshot.
+#[derive(Default, Clone)]
+struct PromptExtras {
+    recent_ctas: Vec<String>,
+    style_samples: Vec<String>,
+    /// For the three versions to choose from: how this one should differ.
+    variant: Option<String>,
+    /// The chat window's text (Windows), read with the screenshot.
+    window_text: Option<String>,
+    /// A change the user asked for from the picker's tone buttons, applied to
+    /// every version, with the replies it changes.
+    tone: Option<String>,
 }
 
-static LAST_DRAFT_INFO: std::sync::Mutex<Option<LastDraftInfo>> = std::sync::Mutex::new(None);
-
-pub fn record_last_draft(reply: &str, jpeg_bytes: Option<Vec<u8>>, hint: Option<&str>) {
-    if let Ok(mut guard) = LAST_DRAFT_INFO.lock() {
-        *guard = Some(LastDraftInfo {
-            jpeg_bytes,
-            reply: reply.to_string(),
-            hint: hint.map(|s| s.to_string()),
-        });
+/// The picker's tone buttons: what each asks the model to change.
+pub fn tone_instruction(tone: &str) -> Option<&'static str> {
+    match tone {
+        "shorter" => Some("Make it much shorter: one or two short sentences."),
+        "longer" => Some("Make it longer, with more detail: four to six sentences."),
+        "funnier" => Some("Make it funnier and more playful, with light teasing or a joke."),
+        "serious" => Some("Make it more serious and sincere: no jokes, no teasing."),
+        _ => None,
     }
 }
 
-pub fn get_last_draft() -> Option<LastDraftInfo> {
-    LAST_DRAFT_INFO.lock().ok().and_then(|guard| guard.clone())
+/// How many of the user's own messages go into each prompt as tone samples.
+const STYLE_SAMPLES_IN_PROMPT: usize = 8;
+
+fn prompt_extras(variant: Option<&str>) -> PromptExtras {
+    PromptExtras {
+        recent_ctas: recent_ctas(),
+        style_samples: crate::chat_memory::style_samples(STYLE_SAMPLES_IN_PROMPT),
+        variant: variant.map(str::to_string),
+        window_text: WINDOW_TEXT.lock().ok().and_then(|g| g.clone()),
+        tone: None,
+    }
+}
+
+/// The lines the model adds after the reply: a short summary of the chat (for
+/// the Telegram alert, never stored) and the user's own messages on screen
+/// (tone samples).
+#[derive(Default, Clone, Debug, PartialEq)]
+struct Trailers {
+    summary: Option<String>,
+    my_messages: Vec<String>,
+}
+
+static LAST_TRAILERS: std::sync::Mutex<Option<Trailers>> = std::sync::Mutex::new(None);
+
+fn set_last_trailers(trailers: Trailers) {
+    if let Ok(mut guard) = LAST_TRAILERS.lock() {
+        *guard = Some(trailers);
+    }
+}
+
+/// Takes the SUMMARY / MY_MESSAGES lines out of the reply, wherever the model
+/// put them (sometimes first). Returns the reply alone, and the lines when any
+/// were present.
+fn extract_trailers(text: &str) -> (String, Option<Trailers>) {
+    let mut trailers = Trailers::default();
+    let mut found = false;
+    let mut reply_lines = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(v) = trimmed.strip_prefix("SUMMARY:") {
+            found = true;
+            trailers.summary = Some(v.trim().to_string()).filter(|v| !v.is_empty());
+        } else if let Some(v) = trimmed.strip_prefix("MY_MESSAGES:") {
+            found = true;
+            let v = v.trim();
+            if !v.eq_ignore_ascii_case("none") {
+                trailers.my_messages = v
+                    .split("||")
+                    .map(|m| m.trim().trim_matches('"').trim().to_string())
+                    .filter(|m| !m.is_empty())
+                    .collect();
+            }
+        } else {
+            reply_lines.push(line);
+        }
+    }
+    let reply = reply_lines.join("\n").trim().to_string();
+    (reply, found.then_some(trailers))
+}
+
+/// Recent drafts Chatelle wrote, to tell them apart from the user's own
+/// messages when learning the user's tone.
+static RECENT_DRAFTS: std::sync::Mutex<std::collections::VecDeque<String>> =
+    std::sync::Mutex::new(std::collections::VecDeque::new());
+const RECENT_DRAFTS_KEPT: usize = 40;
+
+fn written_by_chatelle(message: &str) -> bool {
+    RECENT_DRAFTS
+        .lock()
+        .map(|drafts| drafts.iter().any(|d| same_cta(d, message)))
+        .unwrap_or(false)
+}
+
+/// Keeps a draft that is about to be typed: as the one Re-roll replaces, as a
+/// closing question not to repeat, and as what it taught about the user's tone.
+pub fn accept_draft(reply: &str) {
+    if let Ok(mut drafts) = RECENT_DRAFTS.lock() {
+        drafts.push_back(reply.to_string());
+        while drafts.len() > RECENT_DRAFTS_KEPT {
+            drafts.pop_front();
+        }
+    }
+    let trailers = LAST_TRAILERS.lock().ok().and_then(|mut g| g.take());
+    if let Some(t) = trailers {
+        crate::chat_memory::remember_own_messages(&t.my_messages, written_by_chatelle);
+        if let Ok(mut guard) = LAST_SUMMARY.lock() {
+            *guard = t.summary;
+        }
+    }
+    remember_cta(reply);
+}
+
+/// A short summary of the chat the last draft answered. Kept in memory only,
+/// for the Telegram alert.
+static LAST_SUMMARY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+pub fn last_summary() -> Option<String> {
+    LAST_SUMMARY.lock().ok().and_then(|g| g.clone())
+}
+
+fn set_last_draft_provider(name: &str) {
+    if let Ok(mut guard) = LAST_DRAFT_PROVIDER.lock() {
+        *guard = Some(name.to_string());
+    }
+}
+
+/// Moves the provider after `last` to the front, keeping the cycle order, so
+/// the others are still tried as fallbacks.
+fn rotate_after(attempts: &mut [Attempt], last: Option<&str>) {
+    if let Some(i) = last.and_then(|name| attempts.iter().position(|a| a.name == name)) {
+        attempts.rotate_left((i + 1) % attempts.len());
+    }
+}
+
+/// Closing questions (the CTA) of recent drafts, newest last. Each draft sees
+/// only one screenshot, so without this the model kept ending on the same
+/// question chat after chat.
+static RECENT_CTAS: std::sync::Mutex<std::collections::VecDeque<String>> =
+    std::sync::Mutex::new(std::collections::VecDeque::new());
+const RECENT_CTAS_KEPT: usize = 10;
+
+/// The prompt asks for at least 90 characters; a shorter draft is weak.
+const MIN_REPLY_CHARS: usize = 90;
+
+/// The last question in the reply: the sentence that ends with its last `?`.
+fn closing_question(text: &str) -> Option<&str> {
+    let end = text.rfind('?')?;
+    let start = text[..end]
+        .rfind(['.', '!', '?', '\n'])
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    Some(text[start..=end].trim())
+}
+
+/// The words that carry a question's meaning, lowercased.
+fn cta_words(question: &str) -> std::collections::HashSet<String> {
+    const FILLER: [&str; 16] = [
+        "the", "you", "your", "and", "are", "for", "that", "this", "with", "would", "will", "can",
+        "have", "does", "was", "were",
+    ];
+    question
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() > 2)
+        .map(str::to_lowercase)
+        .filter(|w| !FILLER.contains(&w.as_str()))
+        .collect()
+}
+
+/// True when two closing questions say much the same thing: most words of the
+/// shorter one appear in the other.
+fn same_cta(a: &str, b: &str) -> bool {
+    let (wa, wb) = (cta_words(a), cta_words(b));
+    let smaller = wa.len().min(wb.len());
+    if smaller == 0 {
+        return a.trim().eq_ignore_ascii_case(b.trim());
+    }
+    let shared = wa.intersection(&wb).count();
+    shared * 10 >= smaller * 6
+}
+
+fn remember_cta(reply: &str) {
+    let Some(question) = closing_question(reply) else {
+        return;
+    };
+    if let Ok(mut recent) = RECENT_CTAS.lock() {
+        recent.push_back(question.to_string());
+        while recent.len() > RECENT_CTAS_KEPT {
+            recent.pop_front();
+        }
+    }
+}
+
+fn recent_ctas() -> Vec<String> {
+    RECENT_CTAS
+        .lock()
+        .map(|recent| recent.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Why a draft is not good enough to type, or None when it is. A weak draft
+/// sends the request on to the next model.
+fn weak_draft_reason(reply: &str, recent: &[String]) -> Option<String> {
+    if reply.chars().count() < MIN_REPLY_CHARS {
+        return Some("it is too short".to_string());
+    }
+    let Some(question) = closing_question(reply) else {
+        return Some("it has no closing question".to_string());
+    };
+    recent
+        .iter()
+        .find(|previous| same_cta(question, previous))
+        .map(|previous| format!("its closing question repeats \"{previous}\""))
 }
 
 /// The longest side of the screenshot sent to the model. A full Retina capture
@@ -112,7 +309,10 @@ pub fn get_last_draft() -> Option<LastDraftInfo> {
 const SCREENSHOT_MAX_SIDE_PX: u32 = 1600;
 
 /// How many of the latest messages the model reads before it replies to the newest.
-const MESSAGES_TO_READ: u32 = 5;
+/// How many of the other side's messages the reply is based on. A long newest
+/// message (more than LONG_MESSAGE_SENTENCES sentences) is enough on its own.
+const MESSAGES_TO_READ: u32 = 3;
+const LONG_MESSAGE_SENTENCES: u32 = 3;
 
 /// A provider with an OpenAI-compatible chat completions endpoint and a free tier.
 struct Provider {
@@ -123,7 +323,7 @@ struct Provider {
     reasoning_effort: Option<&'static str>,
     /// Name of the saved key: a macOS Keychain service, or a Windows Credential
     /// Manager target. Settings saves it; on macOS it can also be added with
-    /// `security add-generic-password -s <service> -a handy -w`
+    /// `security add-generic-password -s <service> -a chatelle -w`
     keychain_service: &'static str,
     env_var: &'static str,
 }
@@ -141,7 +341,7 @@ const PROVIDERS: [Provider; 3] = [
         model: "gemini-3.5-flash-lite",
         max_tokens: MAX_REPLY_TOKENS,
         reasoning_effort: None,
-        keychain_service: "handy-gemini-key",
+        keychain_service: "chatelle-gemini-key",
         env_var: "GEMINI_API_KEY",
     },
     Provider {
@@ -150,7 +350,7 @@ const PROVIDERS: [Provider; 3] = [
         model: "qwen/qwen3.8-27b",
         max_tokens: GROQ_MAX_REPLY_TOKENS,
         reasoning_effort: Some("low"),
-        keychain_service: "handy-groq-key",
+        keychain_service: "chatelle-groq-key",
         env_var: "GROQ_API_KEY",
     },
     Provider {
@@ -159,7 +359,7 @@ const PROVIDERS: [Provider; 3] = [
         model: "openrouter/free",
         max_tokens: OPENROUTER_MAX_REPLY_TOKENS,
         reasoning_effort: None,
-        keychain_service: "handy-openrouter-key",
+        keychain_service: "chatelle-openrouter-key",
         env_var: "OPENROUTER_API_KEY",
     },
 ];
@@ -439,9 +639,11 @@ fn instructions() -> String {
            conversation.\n\
          - Write the message itself, as the user, to the other side. Never write advice to \
            the user, and never describe what the user could say or text.\n\
-         - Read the last {MESSAGES_TO_READ} messages that the other side can see. Always \
-           reply to the newest message from the other side (the lowest white or left-side \
-           bubble), never to an earlier question or to the user's own coloured bubble.\n\
+         - Base the reply on at most the last {MESSAGES_TO_READ} messages from the other side. \
+           If their newest message is long (more than {LONG_MESSAGE_SENTENCES} sentences), base \
+           the reply on that message alone. Always reply to the newest message from the other \
+           side (the lowest white or left-side bubble), never to an earlier question or to the \
+           user's own coloured bubble.\n\
          - The user's own messages on screen are already sent. Never repeat or reword one of \
            them: write something new that moves the conversation on. Avoid the repetition \
            of messages and questions: never re-ask any question that was already asked in earlier \
@@ -481,15 +683,54 @@ fn instructions() -> String {
     )
 }
 
+/// What the model reads the chat from: the screenshot, or the chat as text
+/// read from that screenshot on this computer (`screen_text`).
+enum ChatInput {
+    Screenshot(String),
+    Text(String),
+}
+
+/// The user message: the screenshot with the prompt, or the chat text with it.
+fn user_content(input: &ChatInput, prompt: &str) -> Value {
+    match input {
+        ChatInput::Screenshot(jpeg_base64) => json!([
+            {
+                "type": "image_url",
+                "image_url": { "url": format!("data:image/jpeg;base64,{jpeg_base64}") }
+            },
+            // Repeated here because the system prompt alone left "I would
+            // love to hear more" in 3 of 10 live replies; here, 0 of 10.
+            { "type": "text", "text": prompt }
+        ]),
+        ChatInput::Text(chat) => json!(format!(
+            "There is no image this time: the screenshot was read as text on this computer \
+             (so expect small reading mistakes). Each line starts with its horizontal span on \
+             screen, as a percentage of the width, for example [32-58%]. Find the \
+             conversation first: a list of chats, a browser bar, headers or the window title \
+             may sit beside it or above it; ignore those. Read the messages top to bottom; \
+             the newest is at the bottom. To tell who sent each message, use names, 'You' \
+             or 'Me' labels and the flow of the conversation first. Positions are only a \
+             hint: many apps put the user's own messages along the right edge of the \
+             conversation and the other side's along its left edge, but some put both on \
+             the same side. Short centred lines are dates. A message quoting an earlier one \
+             starts with the quoted text. If you cannot tell the conversation from this \
+             text, answer NO_CONVERSATION.\n\n\
+             CHAT (top to bottom):\n{chat}\n\n{prompt}\n\n\
+             There is no screenshot, so leave out the INPUT_BOX line."
+        )),
+    }
+}
+
 /// The chat completions request body for one screenshot, with optional operator guidance (hint)
 /// and previous draft avoidance (avoid).
 fn build_request_with_options(
     model: &str,
     max_tokens: u32,
     reasoning_effort: Option<&str>,
-    jpeg_base64: &str,
+    input: &ChatInput,
     hint: Option<&str>,
     avoid: Option<&str>,
+    extras: &PromptExtras,
 ) -> Value {
     let mut prompt = String::from(
         "Write the reply (or NO_CONVERSATION if there is no conversation on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. \
@@ -519,32 +760,124 @@ fn build_request_with_options(
         }
     }
 
+    if !extras.recent_ctas.is_empty() {
+        prompt.push_str(
+            "\n\nRECENT CLOSING QUESTIONS (already used, so do NOT reuse or paraphrase any of them; end on a new question tied to their latest message):",
+        );
+        for cta in &extras.recent_ctas {
+            prompt.push_str(&format!("\n- \"{cta}\""));
+        }
+    }
+
+    if !extras.style_samples.is_empty() {
+        prompt.push_str(
+            "\n\nTHE USER'S OWN WRITING (messages the user typed themselves). Write the reply in this voice: match its tone, sentence length, punctuation, capitalisation and emoji use, while keeping every rule above:",
+        );
+        for sample in &extras.style_samples {
+            prompt.push_str(&format!("\n- \"{sample}\""));
+        }
+    }
+
+    if let Some(text) = &extras.window_text {
+        prompt.push_str(&format!(
+            "\n\nWINDOW TEXT (the chat window's text, read directly; use it to read the words exactly, and the screenshot to see who sent which message):\n{text}"
+        ));
+    }
+
+    if let Some(variant) = &extras.variant {
+        prompt.push_str(&format!("\n\nTHIS VERSION: {variant}"));
+    }
+
+    if let Some(tone) = &extras.tone {
+        prompt.push_str(&format!(
+            "\n\nCHANGE THE USER ASKED FOR (this overrides the length and closing-question rules above): {tone}"
+        ));
+    }
+
+    prompt.push_str(
+        "\n\nBefore the INPUT_BOX line, add these two lines:\n\
+         SUMMARY: what the conversation on screen is about, in at most two short sentences, without names\n\
+         MY_MESSAGES: the user's own sent messages visible on screen (the coloured bubbles), separated by ' || ', or none",
+    );
+
     let mut body = json!({
         "model": model,
         "max_tokens": max_tokens,
         "messages": [
             { "role": "system", "content": instructions() },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": { "url": format!("data:image/jpeg;base64,{jpeg_base64}") }
-                    },
-                    // Repeated here because the system prompt alone left "I would
-                    // love to hear more" in 3 of 10 live replies; here, 0 of 10.
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
-                ]
-            }
+            { "role": "user", "content": user_content(input, &prompt) }
         ]
     });
     if let Some(effort) = reasoning_effort {
         body["reasoning_effort"] = json!(effort);
     }
     body
+}
+
+/// The request body for writing from the voice hint alone, used when there is
+/// no conversation on screen: the hint says what to write, and the text goes
+/// into whatever input box has focus. No screenshot, no chat rules.
+fn build_hint_only_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    hint: &str,
+    avoid: Option<&str>,
+) -> Value {
+    let mut prompt = format!(
+        "Write the text the user asked for below. It will be typed into an input box \
+         exactly as you write it, so reply with that text only: no quotes, no preamble, \
+         no explanation.\n\nWhat the user asked for: \"{hint}\""
+    );
+    if let Some(a) = avoid.map(str::trim).filter(|a| !a.is_empty()) {
+        prompt.push_str(&format!(
+            "\n\nA previous version was rejected: \"{a}\". Write a clearly different one."
+        ));
+    }
+    let mut body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{ "role": "user", "content": prompt }]
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    body
+}
+
+/// Writes from the voice hint alone with the first provider that answers.
+fn draft_from_hint(
+    attempts: &[Attempt],
+    hint: &str,
+    avoid: Option<&str>,
+) -> Result<String, String> {
+    let mut failures = Vec::new();
+    for attempt in attempts {
+        let Some(key) = &attempt.key else {
+            continue;
+        };
+        let body = build_hint_only_request(
+            attempt.model,
+            attempt.max_tokens,
+            attempt.reasoning_effort,
+            hint,
+            avoid,
+        );
+        match request_reply(attempt.url, key, &body) {
+            Ok(text) => {
+                info!("Wrote the text from the voice hint with {}", attempt.name);
+                return Ok(text);
+            }
+            Err(e) => {
+                warn!("{} could not write from the hint: {e}", attempt.name);
+                failures.push(format!("{}: {e}", attempt.name));
+            }
+        }
+    }
+    Err(format!(
+        "No provider wrote the text from the hint. {}",
+        failures.join("; ")
+    ))
 }
 
 #[cfg(test)]
@@ -555,7 +888,15 @@ fn build_request(
     reasoning_effort: Option<&str>,
     jpeg_base64: &str,
 ) -> Value {
-    build_request_with_options(model, max_tokens, reasoning_effort, jpeg_base64, None, None)
+    build_request_with_options(
+        model,
+        max_tokens,
+        reasoning_effort,
+        &ChatInput::Screenshot(jpeg_base64.to_string()),
+        None,
+        None,
+        &PromptExtras::default(),
+    )
 }
 
 /// Asks the same provider to replace "love" (and words built from it) in a
@@ -795,7 +1136,15 @@ fn parse_reply(response: &Value) -> Result<String, String> {
     if let Some(coords) = maybe_coords {
         set_last_input_box(Some(coords));
     }
+    let (extracted_text, trailers) = extract_trailers(&extracted_text);
+    if let Some(trailers) = trailers {
+        set_last_trailers(trailers);
+    }
     let text = extracted_text.trim();
+    // The model sometimes answers with only the extra lines.
+    if text.is_empty() {
+        return Err("no reply text".to_string());
+    }
     if has_mixed_script_glitch(text) {
         return Err(format!("the reply contained a mixed-script glitch: {text}"));
     }
@@ -1275,6 +1624,7 @@ fn request_reply(url: &str, key: &str, body: &Value) -> Result<String, String> {
 }
 
 /// One provider to try, with its key if the person saved one.
+#[derive(Clone)]
 struct Attempt<'a> {
     name: &'a str,
     url: &'a str,
@@ -1289,17 +1639,19 @@ struct Attempt<'a> {
 fn try_attempt_with_options(
     attempt: &Attempt,
     key: &str,
-    jpeg_base64: &str,
+    input: &ChatInput,
     hint: Option<&str>,
     avoid: Option<&str>,
+    extras: &PromptExtras,
 ) -> Result<String, String> {
     let body = build_request_with_options(
         attempt.model,
         attempt.max_tokens,
         attempt.reasoning_effort,
-        jpeg_base64,
+        input,
         hint,
         avoid,
+        extras,
     );
     match request_reply(attempt.url, key, &body) {
         Err(e) => {
@@ -1374,20 +1726,39 @@ fn try_attempt_with_options(
 /// all of them fail, with each one's reason.
 fn draft_with_fallback_options(
     attempts: &[Attempt],
-    jpeg_base64: &str,
+    input: &ChatInput,
     hint: Option<&str>,
     avoid: Option<&str>,
+    extras: &PromptExtras,
+    check_quality: bool,
 ) -> Result<String, String> {
     let mut failures = Vec::new();
+    // The first weak draft, typed if no other model writes a better one.
+    let mut weak_draft: Option<(&str, String)> = None;
     for attempt in attempts {
         let Some(key) = &attempt.key else {
             failures.push(format!("{}: no key saved", attempt.name));
             continue;
         };
-        match try_attempt_with_options(attempt, key, jpeg_base64, hint, avoid) {
+        match try_attempt_with_options(attempt, key, input, hint, avoid, extras) {
             Ok(reply) => {
-                info!("Drafted the reply with {}", attempt.name);
-                return Ok(reply);
+                let weak = check_quality
+                    .then(|| weak_draft_reason(&reply, &extras.recent_ctas))
+                    .flatten();
+                match weak {
+                    None => {
+                        info!("Drafted the reply with {}", attempt.name);
+                        set_last_draft_provider(attempt.name);
+                        return Ok(reply);
+                    }
+                    Some(why) => {
+                        info!(
+                            "{}'s draft is not good enough ({why}), trying the next model",
+                            attempt.name
+                        );
+                        weak_draft.get_or_insert((attempt.name, reply));
+                    }
+                }
             }
             Err(e) if e == "no conversation on screen" => {
                 info!("{} found no conversation on screen", attempt.name);
@@ -1402,6 +1773,11 @@ fn draft_with_fallback_options(
             }
         }
     }
+    if let Some((name, reply)) = weak_draft {
+        info!("No model wrote a better draft, using the first one");
+        set_last_draft_provider(name);
+        return Ok(reply);
+    }
     Err(format!(
         "No provider drafted a reply. {}",
         failures.join("; ")
@@ -1410,7 +1786,14 @@ fn draft_with_fallback_options(
 
 #[cfg(test)]
 fn draft_with_fallback(attempts: &[Attempt], jpeg_base64: &str) -> Result<String, String> {
-    draft_with_fallback_options(attempts, jpeg_base64, None, None)
+    draft_with_fallback_options(
+        attempts,
+        &ChatInput::Screenshot(jpeg_base64.to_string()),
+        None,
+        None,
+        &PromptExtras::default(),
+        false,
+    )
 }
 
 fn saved_key(provider: &Provider) -> Option<String> {
@@ -1458,9 +1841,114 @@ pub fn save_provider_key(name: &str, key: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+/// Screenshots the chat to reply to. Takes the window in front, so a chat
+/// inside a small or remote window (AnyDesk) is still readable after the
+/// shrink. Falls back to the whole display.
 pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
-    let path = std::env::temp_dir().join(format!("handy-reply-{}.jpg", std::process::id()));
+    // A position found in this picture (the input box) is clicked inside
+    // whatever was captured: the window, or else the whole display.
+    set_last_input_box(None);
+    match crate::watch::capture_front_window_jpeg() {
+        Ok((bytes, area)) => {
+            set_capture_area(Some(area));
+            set_window_text(read_front_window_text());
+            Ok(bytes)
+        }
+        Err(e) => {
+            set_capture_area(None);
+            set_window_text(None);
+            warn!("Could not capture the front window, using the whole display: {e}");
+            capture_display_jpeg()
+        }
+    }
+}
+
+/// Where the last screenshot was taken from on screen (x, y, width, height),
+/// when it was one window; None means the whole display.
+static CAPTURE_AREA: std::sync::Mutex<Option<(f64, f64, f64, f64)>> = std::sync::Mutex::new(None);
+
+fn set_capture_area(area: Option<(f64, f64, f64, f64)>) {
+    if let Ok(mut guard) = CAPTURE_AREA.lock() {
+        *guard = area;
+    }
+}
+
+pub fn last_capture_area() -> Option<(f64, f64, f64, f64)> {
+    CAPTURE_AREA.lock().ok().and_then(|g| *g)
+}
+
+/// The chat window's text, read alongside the screenshot it belongs to, so
+/// the model can read the words exactly. Windows only; None elsewhere.
+static WINDOW_TEXT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn set_window_text(text: Option<String>) {
+    if let Ok(mut guard) = WINDOW_TEXT.lock() {
+        *guard = text;
+    }
+}
+
+/// How much window text goes into a prompt: the newest end of the chat.
+#[cfg(target_os = "windows")]
+const WINDOW_TEXT_MAX_CHARS: usize = 4000;
+
+/// Reads the visible text of the window in front through UI Automation, the
+/// text screen readers use. Works for chats in a browser or a desktop app; a
+/// remote desktop (AnyDesk) has no text to read, and then the screenshot is
+/// all the model gets.
+#[cfg(target_os = "windows")]
+fn read_front_window_text() -> Option<String> {
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+    };
+    use windows::Win32::UI::Accessibility::{
+        CUIAutomation, IUIAutomation, TreeScope_Descendants, UIA_TextControlTypeId,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    let lines = unsafe {
+        // Already initialised on this thread is fine: the result is ignored.
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let automation: IUIAutomation =
+            CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+        let root = automation.ElementFromHandle(GetForegroundWindow()).ok()?;
+        let all = automation.CreateTrueCondition().ok()?;
+        let elements = root.FindAll(TreeScope_Descendants, &all).ok()?;
+        let mut lines: Vec<String> = Vec::new();
+        for i in 0..elements.Length().ok()? {
+            let Ok(element) = elements.GetElement(i) else {
+                continue;
+            };
+            if element.CurrentControlType().ok() != Some(UIA_TextControlTypeId) {
+                continue;
+            }
+            let Ok(name) = element.CurrentName() else {
+                continue;
+            };
+            let text = name.to_string();
+            let text = text.trim();
+            if !text.is_empty() && lines.last().map(String::as_str) != Some(text) {
+                lines.push(text.to_string());
+            }
+        }
+        lines
+    };
+    let text = lines.join("\n");
+    if text.is_empty() {
+        return None;
+    }
+    // Keep the newest end of the chat.
+    let skip = text.chars().count().saturating_sub(WINDOW_TEXT_MAX_CHARS);
+    Some(text.chars().skip(skip).collect())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_front_window_text() -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn capture_display_jpeg() -> Result<Vec<u8>, String> {
+    let path = std::env::temp_dir().join(format!("chatelle-reply-{}.jpg", std::process::id()));
     let result = (|| {
         // -x: no shutter sound. Captures the main display.
         let captured = Command::new("screencapture")
@@ -1496,7 +1984,7 @@ pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
 /// Copies the main display with GDI. Chatelle is DPI aware, so the screen size
 /// is in real pixels and the copy is not blurred.
 #[cfg(target_os = "windows")]
-pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
+fn capture_display_jpeg() -> Result<Vec<u8>, String> {
     use windows::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
         GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
@@ -1577,7 +2065,7 @@ pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub(crate) fn capture_screen_jpeg() -> Result<Vec<u8>, String> {
+fn capture_display_jpeg() -> Result<Vec<u8>, String> {
     Err("Reply drafting reads the screen and is only available on macOS and Windows".to_string())
 }
 
@@ -1587,6 +2075,74 @@ pub fn draft_reply_from_jpeg_with_options(
     hint: Option<&str>,
     avoid: Option<&str>,
 ) -> Result<String, String> {
+    let attempts = provider_attempts()?;
+    // Re-roll (a rejected draft to avoid): start with the model after the one
+    // that wrote it, so the new draft comes from a different model.
+    let mut attempts = attempts;
+    if avoid.is_some() {
+        let last = LAST_DRAFT_PROVIDER.lock().ok().and_then(|g| g.clone());
+        rotate_after(&mut attempts, last.as_deref());
+    }
+    let chat = crate::screen_text::read_chat(jpeg);
+    let drafted = draft_text_first(&attempts, jpeg, &chat, hint, avoid, &prompt_extras(None));
+    // With a hint, any input box works: when there is no chat to reply to,
+    // write what the hint asks for instead.
+    let reply = match (drafted, hint.map(str::trim).filter(|h| !h.is_empty())) {
+        (Err(e), Some(h)) if e == "no conversation on screen" => {
+            info!("No conversation on screen, writing from the voice hint alone");
+            draft_from_hint(&attempts, h, avoid)?
+        }
+        (drafted, _) => drafted?,
+    };
+    accept_draft(&reply);
+    Ok(reply)
+}
+
+/// Drafts from the chat text read off the screenshot when there is some: a
+/// request a tenth the size, which fits every free plan. Falls back to the
+/// screenshot itself when there is no text, or when no model could draft from
+/// it (including "no conversation").
+fn draft_text_first(
+    attempts: &[Attempt],
+    jpeg: &[u8],
+    chat: &crate::screen_text::ChatRead,
+    hint: Option<&str>,
+    avoid: Option<&str>,
+    extras: &PromptExtras,
+) -> Result<String, String> {
+    if let Some(text) = &chat.transcript {
+        let input = ChatInput::Text(text.clone());
+        match draft_with_fallback_options(
+            attempts,
+            &input,
+            hint,
+            avoid,
+            extras,
+            extras.tone.is_none(),
+        ) {
+            Ok(reply) => {
+                // The model saw no picture, so the input box comes from the
+                // text recognition (its placeholder), if it was found.
+                set_last_input_box(chat.input_box.map(|(left, top, right, bottom)| {
+                    InputBoxCoords {
+                        ymin: top * 1000.0,
+                        xmin: left * 1000.0,
+                        ymax: bottom * 1000.0,
+                        xmax: right * 1000.0,
+                    }
+                }));
+                info!("Drafted from the chat text, without the screenshot");
+                return Ok(reply);
+            }
+            Err(e) => info!("Drafting from the chat text failed ({e}), sending the screenshot"),
+        }
+    }
+    let input = ChatInput::Screenshot(base64::engine::general_purpose::STANDARD.encode(jpeg));
+    draft_with_fallback_options(attempts, &input, hint, avoid, extras, extras.tone.is_none())
+}
+
+/// Every provider in order, with its saved key. Fails when no key is saved.
+fn provider_attempts() -> Result<Vec<Attempt<'static>>, String> {
     let attempts: Vec<Attempt> = PROVIDERS
         .iter()
         .map(|p| Attempt {
@@ -1603,33 +2159,126 @@ pub fn draft_reply_from_jpeg_with_options(
             "No provider key saved. Add one in Settings under Draft reply keys.".to_string(),
         );
     }
-    let reply = draft_with_fallback_options(
-        &attempts,
-        &base64::engine::general_purpose::STANDARD.encode(jpeg),
-        hint,
-        avoid,
-    )?;
-    record_last_draft(&reply, Some(jpeg.to_vec()), hint);
-    Ok(reply)
+    Ok(attempts)
+}
+
+/// Once the first of the three drafts is ready, how long to wait for the rest.
+const MORE_CHOICES_WAIT: Duration = Duration::from_secs(4);
+
+/// How each of the three drafts to choose from should differ.
+const CHOICE_VARIANTS: [Option<&str>; 3] = [
+    None,
+    Some("Make this version more playful and casual than a usual reply."),
+    Some("Make this version warmer and more personal, and end on a different kind of question."),
+];
+
+/// Drafts what to type. With `choose`, writes up to three different versions
+/// at once for the user to pick from; a single result (or `choose` off) is
+/// accepted right away, while several are accepted only when one is picked
+/// (`accept_draft`). `tone` is a change asked for from the picker (see
+/// `tone_instruction`), applied to every version.
+pub fn draft_for_typing(
+    jpeg: &[u8],
+    hint: Option<&str>,
+    avoid: Option<&str>,
+    choose: bool,
+    tone: Option<&str>,
+) -> Result<Vec<String>, String> {
+    if !choose {
+        return draft_reply_from_jpeg_with_options(jpeg, hint, avoid).map(|reply| vec![reply]);
+    }
+    let attempts = provider_attempts()?;
+    // Read the chat text once for all three versions.
+    let chat = crate::screen_text::read_chat(jpeg);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    for (index, variant) in CHOICE_VARIANTS.iter().enumerate() {
+        // Only the first version falls back through every model; the others
+        // use the first model alone, so a slow fallback chain (a 30-second
+        // OpenRouter answer) never holds the choices back.
+        let attempts: Vec<Attempt<'static>> = if index == 0 {
+            attempts.clone()
+        } else {
+            attempts
+                .iter()
+                .filter(|a| a.key.is_some())
+                .take(1)
+                .cloned()
+                .collect()
+        };
+        let sender = sender.clone();
+        let jpeg = jpeg.to_vec();
+        let chat = chat.clone();
+        let hint = hint.map(str::to_string);
+        let avoid = avoid.map(str::to_string);
+        let mut extras = prompt_extras(*variant);
+        extras.tone = tone.map(str::to_string);
+        std::thread::spawn(move || {
+            let result = draft_text_first(
+                &attempts,
+                &jpeg,
+                &chat,
+                hint.as_deref(),
+                avoid.as_deref(),
+                &extras,
+            );
+            let _ = sender.send((index, result));
+        });
+    }
+    drop(sender);
+    // Wait for all three, but once one draft is ready give the others only a
+    // few seconds; a version still running after that is left out.
+    let mut slots: Vec<Option<Result<String, String>>> = vec![None; CHOICE_VARIANTS.len()];
+    let mut deadline: Option<std::time::Instant> = None;
+    loop {
+        let message = match deadline {
+            None => receiver.recv().ok(),
+            Some(d) => receiver
+                .recv_timeout(d.saturating_duration_since(std::time::Instant::now()))
+                .ok(),
+        };
+        let Some((index, result)) = message else {
+            break;
+        };
+        if result.is_ok() && deadline.is_none() {
+            deadline = Some(std::time::Instant::now() + MORE_CHOICES_WAIT);
+        }
+        slots[index] = Some(result);
+        if slots.iter().all(Option::is_some) {
+            break;
+        }
+    }
+    let results: Vec<Result<String, String>> = slots.into_iter().flatten().collect();
+    let mut drafts: Vec<String> = Vec::new();
+    for draft in results.iter().filter_map(|r| r.as_ref().ok()) {
+        if !drafts.contains(draft) {
+            drafts.push(draft.clone());
+        }
+    }
+    if drafts.is_empty() {
+        let error = results
+            .into_iter()
+            .find_map(Result::err)
+            .unwrap_or_else(|| "No draft was written".to_string());
+        // With a hint, any input box works: write from the hint alone.
+        return match hint.map(str::trim).filter(|h| !h.is_empty()) {
+            Some(h) if error == "no conversation on screen" => {
+                info!("No conversation on screen, writing from the voice hint alone");
+                let reply = draft_from_hint(&attempts, h, None)?;
+                accept_draft(&reply);
+                Ok(vec![reply])
+            }
+            _ => Err(error),
+        };
+    }
+    if drafts.len() == 1 {
+        accept_draft(&drafts[0]);
+    }
+    Ok(drafts)
 }
 
 /// Drafts a reply from provided JPEG bytes.
 pub fn draft_reply_from_jpeg(jpeg: &[u8]) -> Result<String, String> {
     draft_reply_from_jpeg_with_options(jpeg, None, None)
-}
-
-/// Reads the chat on screen and returns the reply to type, taking optional voice hint and draft avoidance.
-pub fn draft_reply_from_screen_with_options(
-    hint: Option<&str>,
-    avoid: Option<&str>,
-) -> Result<String, String> {
-    let jpeg = capture_screen_jpeg()?;
-    draft_reply_from_jpeg_with_options(&jpeg, hint, avoid)
-}
-
-/// Reads the chat on screen and returns the reply to type.
-pub fn draft_reply_from_screen() -> Result<String, String> {
-    draft_reply_from_screen_with_options(None, None)
 }
 
 #[cfg(test)]
@@ -1652,31 +2301,230 @@ mod tests {
     }
 
     #[test]
+    fn hint_only_request_has_no_screenshot_and_carries_the_hint() {
+        let body = build_hint_only_request(
+            "test-model",
+            1000,
+            None,
+            "tell them the features are not working",
+            Some("Features are down."),
+        );
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        let prompt = messages[0]["content"].as_str().unwrap();
+        assert!(prompt.contains("tell them the features are not working"));
+        assert!(prompt.contains("Features are down."));
+        assert!(!body.to_string().contains("image_url"));
+    }
+
+    #[test]
     fn request_with_hint_and_avoid_includes_operator_guidance() {
         let body = build_request_with_options(
             "test-model",
             1000,
             None,
-            "AAAA",
+            &ChatInput::Screenshot("AAAA".to_string()),
             Some("be playful and mention dessert"),
             Some("I love tiramisu!"),
+            &PromptExtras {
+                recent_ctas: vec!["What are you cooking tonight?".to_string()],
+                ..Default::default()
+            },
         );
         let prompt = body["messages"][1]["content"][1]["text"].as_str().unwrap();
         assert!(prompt.contains("OPERATOR GUIDANCE / VOICE HINT"));
         assert!(prompt.contains("be playful and mention dessert"));
         assert!(prompt.contains("DO NOT REPEAT PREVIOUS DRAFT"));
         assert!(prompt.contains("I love tiramisu!"));
+        assert!(prompt.contains("RECENT CLOSING QUESTIONS"));
+        assert!(prompt.contains("What are you cooking tonight?"));
     }
 
     #[test]
-    fn the_instructions_fit_any_chat_keep_notes_private_and_read_five_messages() {
+    fn summary_and_own_messages_are_split_off_the_reply() {
+        let (reply, trailers) = extract_trailers(
+            "Sounds like a great plan for the weekend. What time works?\nSUMMARY: Planning a weekend trip.\nMY_MESSAGES: haha yes || \"see you then\"",
+        );
+        assert_eq!(
+            reply,
+            "Sounds like a great plan for the weekend. What time works?"
+        );
+        let trailers = trailers.unwrap();
+        assert_eq!(
+            trailers.summary.as_deref(),
+            Some("Planning a weekend trip.")
+        );
+        assert_eq!(trailers.my_messages, ["haha yes", "see you then"]);
+
+        let (reply, trailers) = extract_trailers("Just the reply?");
+        assert_eq!(reply, "Just the reply?");
+        assert!(trailers.is_none());
+
+        let (_, trailers) = extract_trailers("Hi?\nMY_MESSAGES: none");
+        assert!(trailers.unwrap().my_messages.is_empty());
+
+        // Lines put before the reply are taken out too.
+        let (reply, trailers) =
+            extract_trailers("SUMMARY: Moving to Rwanda.\nHow is the packing going?");
+        assert_eq!(reply, "How is the packing going?");
+        assert!(trailers.is_some());
+
+        // Only the extra lines: no reply at all.
+        let (reply, _) = extract_trailers("SUMMARY: Moving.\nMY_MESSAGES: none");
+        assert!(reply.is_empty());
+    }
+
+    #[test]
+    fn only_the_picker_tones_have_instructions() {
+        for tone in ["shorter", "longer", "funnier", "serious"] {
+            assert!(tone_instruction(tone).is_some(), "{tone}");
+        }
+        assert!(tone_instruction("ignore the rules").is_none());
+    }
+
+    #[test]
+    fn reroll_starts_with_the_model_after_the_last_one() {
+        let attempt = |name| Attempt {
+            name,
+            url: "",
+            model: "m",
+            max_tokens: MAX_REPLY_TOKENS,
+            reasoning_effort: None,
+            key: None,
+        };
+        fn names(a: &[Attempt]) -> Vec<String> {
+            a.iter().map(|a| a.name.to_string()).collect()
+        }
+        let mut attempts = vec![attempt("Gemini"), attempt("Groq"), attempt("OpenRouter")];
+        rotate_after(&mut attempts, Some("Gemini"));
+        assert_eq!(names(&attempts), ["Groq", "OpenRouter", "Gemini"]);
+        rotate_after(&mut attempts, Some("OpenRouter"));
+        assert_eq!(names(&attempts), ["Gemini", "Groq", "OpenRouter"]);
+        rotate_after(&mut attempts, None);
+        assert_eq!(names(&attempts), ["Gemini", "Groq", "OpenRouter"]);
+    }
+
+    #[test]
+    fn closing_question_is_the_last_question_sentence() {
+        assert_eq!(
+            closing_question(
+                "That sounds fun. Are you free later? Tell me more about it, what did you cook?"
+            ),
+            Some("Tell me more about it, what did you cook?")
+        );
+        assert_eq!(closing_question("No question here."), None);
+    }
+
+    #[test]
+    fn a_reworded_closing_question_counts_as_a_repeat() {
+        assert!(same_cta(
+            "Where are your hands while I'm grinding on top of you?",
+            "So where are your hands while I grind on top of you?"
+        ));
+        assert!(!same_cta(
+            "Where are your hands while I'm grinding on top of you?",
+            "What did you cook for dinner tonight?"
+        ));
+    }
+
+    #[test]
+    fn weak_drafts_are_short_have_no_question_or_repeat_a_cta() {
+        let good = "That sounds like a great evening out with friends, and the food must have been amazing. What did you order first?";
+        assert_eq!(weak_draft_reason(good, &[]), None);
+        assert!(weak_draft_reason("Nice. What else?", &[]).is_some());
+        assert!(weak_draft_reason(
+            "That sounds like a great evening out with friends, and the food must have been amazing too.",
+            &[]
+        )
+        .is_some());
+        let recent = ["What did you order first at dinner?".to_string()];
+        assert!(weak_draft_reason(good, &recent).is_some());
+    }
+
+    #[test]
+    fn a_weak_draft_moves_on_to_the_next_model() {
+        let (first_url, first) = serve_once(
+            "200 OK",
+            r#"{"choices":[{"message":{"content":"Nice. What else?"}}]}"#,
+        );
+        let strong = "That sounds like a great evening out with friends, and the food must have been amazing. What did you order first?";
+        let (second_url, second) = serve_once(
+            "200 OK",
+            &format!(r#"{{"choices":[{{"message":{{"content":"{strong}"}}}}]}}"#),
+        );
+        let attempts = [
+            Attempt {
+                name: "First",
+                url: &first_url,
+                model: "m",
+                max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
+                key: Some("k1".into()),
+            },
+            Attempt {
+                name: "Second",
+                url: &second_url,
+                model: "m",
+                max_tokens: MAX_REPLY_TOKENS,
+                reasoning_effort: None,
+                key: Some("k2".into()),
+            },
+        ];
+        assert_eq!(
+            draft_with_fallback_options(
+                &attempts,
+                &ChatInput::Screenshot("QUJD".to_string()),
+                None,
+                None,
+                &PromptExtras::default(),
+                true
+            )
+            .unwrap(),
+            strong
+        );
+        first.join().unwrap();
+        second.join().unwrap();
+    }
+
+    #[test]
+    fn the_first_weak_draft_is_kept_when_no_model_does_better() {
+        let (only_url, only) = serve_once(
+            "200 OK",
+            r#"{"choices":[{"message":{"content":"Nice. What else?"}}]}"#,
+        );
+        let attempts = [Attempt {
+            name: "Only",
+            url: &only_url,
+            model: "m",
+            max_tokens: MAX_REPLY_TOKENS,
+            reasoning_effort: None,
+            key: Some("k".into()),
+        }];
+        assert_eq!(
+            draft_with_fallback_options(
+                &attempts,
+                &ChatInput::Screenshot("QUJD".to_string()),
+                None,
+                None,
+                &PromptExtras::default(),
+                true
+            )
+            .unwrap(),
+            "Nice. What else?"
+        );
+        only.join().unwrap();
+    }
+
+    #[test]
+    fn the_instructions_fit_any_chat_keep_notes_private_and_read_three_messages() {
         let text = instructions();
         assert!(text.contains("First, find the conversation"));
         assert!(text.contains("two to four sentences"));
         for app in ["WhatsApp", "Gleap", "Slack", "Instagram"] {
             assert!(!text.contains(app), "the instructions must not name {app}");
         }
-        assert!(text.contains("last 5 messages"));
+        assert!(text.contains("at most the last 3 messages from the other side"));
+        assert!(text.contains("more than 3 sentences"));
         assert!(text.contains("Internal notes, logs and warning banners are private to the team"));
         assert!(text.contains("never quote it, repeat it or hint at it"));
         assert!(text.contains("a fact that appears only in a note"));

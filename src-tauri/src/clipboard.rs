@@ -1,24 +1,12 @@
 use crate::input::{self, EnigoState};
 use enigo::{Enigo, Keyboard};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Mutex, PoisonError};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 /// Serializes typing: two transcripts typed at once would interleave their
 /// characters. Only taken by `paste`, which never runs on the main thread.
 static PASTE_LOCK: Mutex<()> = Mutex::new(());
-
-/// Length of the last text typed by Handy, so an undo or regenerate shortcut
-/// can backspace it away.
-static LAST_TYPED_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-pub fn set_last_typed_count(count: usize) {
-    LAST_TYPED_COUNT.store(count, Ordering::SeqCst);
-}
-
-pub fn get_last_typed_count() -> usize {
-    LAST_TYPED_COUNT.load(Ordering::SeqCst)
-}
 
 /// Runs `f` with the shared Enigo on the main thread (macOS TIS APIs require it)
 /// and waits for the result. Runs inline if already on the main thread, so no deadlock.
@@ -103,45 +91,63 @@ fn paste_direct(text: &str, app_handle: &AppHandle) -> Result<(), String> {
     )
 }
 
-/// Types `text` into the focused app, one key press per character. Call from a
-/// worker thread, never the main thread: it sleeps between keys (input
-/// injection hops via `with_enigo`).
-pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
-    let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    let count = text.chars().count();
-    let res = paste_direct(&text, &app_handle);
-    if res.is_ok() {
-        set_last_typed_count(count);
-    }
-    res
+/// Pastes text in one go: puts it on the clipboard, presses Cmd+V (Ctrl+V on
+/// Windows and Linux), then puts back what the clipboard held before.
+fn paste_via_clipboard(text: &str, app_handle: &AppHandle) -> Result<(), String> {
+    let clipboard = app_handle.clipboard();
+    let saved = clipboard.read_text().ok().filter(|t| !t.is_empty());
+    // Only probe for an image when there is no text: reading one decodes the
+    // whole bitmap, and text is the common case.
+    let saved_image = if saved.is_none() {
+        clipboard.read_image().ok().map(|image| image.to_owned())
+    } else {
+        None
+    };
+    clipboard
+        .write_text(text)
+        .map_err(|e| format!("Could not write to the clipboard: {e}"))?;
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    let result = with_enigo(app_handle, |enigo| {
+        use enigo::{Direction, Key};
+        // ANSI V key code on macOS, VK_V on Windows.
+        #[cfg(target_os = "macos")]
+        let (modifier, v) = (Key::Meta, Key::Other(9));
+        #[cfg(target_os = "windows")]
+        let (modifier, v) = (Key::Control, Key::Other(0x56));
+        #[cfg(target_os = "linux")]
+        let (modifier, v) = (Key::Control, Key::Unicode('v'));
+        enigo
+            .key(modifier, Direction::Press)
+            .and_then(|_| enigo.key(v, Direction::Click))
+            .and_then(|_| {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                enigo.key(modifier, Direction::Release)
+            })
+            .map_err(|e| format!("Could not press the paste keys: {e}"))
+    });
+
+    // Give the app time to read the clipboard before it changes back.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    // Put back what was there: text, else an image (a copied screenshot), else
+    // clear it so the drafted text is not left behind.
+    let _ = match (saved, saved_image) {
+        (Some(previous), _) => clipboard.write_text(previous),
+        (None, Some(image)) => clipboard.write_image(&image),
+        (None, None) => clipboard.clear(),
+    };
+    result
 }
 
-/// Backspaces the characters typed by the last `paste` operation.
-///
-/// Returns the number of characters erased.
-pub fn erase_last_typed(app_handle: &AppHandle) -> Result<usize, String> {
-    let count = get_last_typed_count();
-    if count == 0 {
-        return Ok(0);
-    }
+/// Puts `text` into the focused app: typed one key press per character, or
+/// pasted through the clipboard when that setting is on. Call from a worker
+/// thread, never the main thread: it sleeps between keys (input injection
+/// hops via `with_enigo`).
+pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    let front_app = with_enigo(app_handle, |_| Ok(front_app_pid()))?;
-    input::backspace_keystrokes(
-        |stroke| {
-            with_enigo(app_handle, move |enigo| {
-                if front_app_pid() != front_app {
-                    return Err("another app came to the front, so erasing stopped".to_string());
-                }
-                match stroke {
-                    input::Stroke::Key(key, direction) => enigo.key(key, direction),
-                    input::Stroke::Text(character) => enigo.text(&character.to_string()),
-                }
-                .map_err(|e| format!("{}", e))
-            })
-        },
-        count,
-        2,
-    )?;
-    set_last_typed_count(0);
-    Ok(count)
+    if crate::settings::get_settings(&app_handle).paste_with_clipboard {
+        paste_via_clipboard(&text, &app_handle)
+    } else {
+        paste_direct(&text, &app_handle)
+    }
 }

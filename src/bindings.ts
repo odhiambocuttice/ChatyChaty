@@ -232,6 +232,30 @@ async changeAutoFocusInputSetting(enabled: boolean) : Promise<Result<null, strin
     else return { status: "error", error: e  as any };
 }
 },
+async changePasteWithClipboardSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_paste_with_clipboard_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeDockLabelsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_dock_labels_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeChooseBeforeTypingSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_choose_before_typing_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Start key recording mode
  */
@@ -367,9 +391,42 @@ async triggerDraftReplyHintStop() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async triggerRegenerateReply() : Promise<Result<null, string>> {
+async triggerDraftReplyHintToggle() : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("trigger_regenerate_reply") };
+    return { status: "ok", data: await TAURI_INVOKE("trigger_draft_reply_hint_toggle") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Types the draft the user picked from the three on offer.
+ */
+async chooseDraft(index: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("choose_draft", { index }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Replaces the drafts on offer with three new ones.
+ */
+async regenerateChoices() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("regenerate_choices") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Rewrites the drafts on offer with a tone button's change.
+ */
+async retoneChoices(tone: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("retone_choices", { tone }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -427,14 +484,6 @@ async setLogLevel(level: LogLevel) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async openLogDir() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("open_log_dir") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * Try to initialize Enigo (keyboard/mouse simulation).
  * On macOS, this will return an error if accessibility permissions are not granted.
@@ -462,22 +511,6 @@ async initializeShortcuts() : Promise<Result<null, string>> {
 },
 async getModelStatus() : Promise<ModelStatus> {
     return await TAURI_INVOKE("get_model_status");
-},
-async getSpeechModels() : Promise<SpeechModelOption[]> {
-    return await TAURI_INVOKE("get_speech_models");
-},
-/**
- * Switch to another speech model: stop a download of the old one and unload
- * it, then download the new one if needed and load it in the background, so
- * the settings window can switch back while the download runs.
- */
-async changeSpeechModelSetting(model: SpeechModel) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_speech_model_setting", { model }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
 },
 async downloadModel() : Promise<Result<null, string>> {
     try {
@@ -722,7 +755,23 @@ show_floating_dock?: boolean;
 /**
  * Whether to automatically detect and focus the chat input box before typing.
  */
-auto_focus_input?: boolean }
+auto_focus_input?: boolean; 
+/**
+ * Paste the text through the clipboard in one go, instead of typing it
+ * one key press per character. Faster, but pages that block pasting
+ * refuse it. On by default.
+ */
+paste_with_clipboard?: boolean; 
+/**
+ * On the left or right edge, whether the dock shows each button's label
+ * or only its icon.
+ */
+dock_labels?: boolean; 
+/**
+ * Draft and Hint write three versions and wait for the user to pick one,
+ * instead of typing the first draft straight away.
+ */
+choose_before_typing?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type CustomSounds = { start: boolean; stop: boolean }
@@ -855,18 +904,10 @@ export type ShortcutActivation =
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**
- * Which speech model transcribes. Parakeet types live while you speak;
- * Qwen3-ASR makes fewer errors but types only after you stop.
+ * Which speech model transcribes. Only Parakeet is offered; settings saved
+ * when Qwen3-ASR was offered still load, as Parakeet.
  */
-export type SpeechModel = "parakeet" | "qwen3_asr"
-/**
- * A model the settings window offers.
- */
-export type SpeechModelOption = { id: SpeechModel; name: string; size_mb: number; 
-/**
- * Whether it types while you speak, or only after you stop.
- */
-streams: boolean }
+export type SpeechModel = "parakeet"
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
@@ -894,7 +935,7 @@ export type StreamTextEvent = { committed: string; tentative: string }
 export type TelegramStatus = { configured: boolean; bot_username: string | null; paired: boolean; paired_chat_id: number | null; pairing_code: string | null }
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
- * and `Dark` force one of the two palettes Handy already ships.
+ * and `Dark` force one of the two palettes Chatelle already ships.
  */
 export type Theme = "system" | "light" | "dark"
 /**
@@ -926,7 +967,7 @@ export type TranscriptionOutcome =
  * number: with no gap the text lands in bursts that some fields reject as
  * pasted, and a long gap makes a four-sentence reply take half a minute.
  */
-export type TypingSpeed = "slow" | "normal" | "fast"
+export type TypingSpeed = "slow" | "normal" | "fast" | "ultra"
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 

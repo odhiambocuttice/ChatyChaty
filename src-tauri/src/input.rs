@@ -46,9 +46,22 @@ pub fn focus_input_box(app_handle: &AppHandle, coords: crate::reply::InputBoxCoo
     }
 
     let (norm_x, norm_y) = coords.center_normalized();
+    // The position is within the captured picture: one window (where it sat on
+    // screen) or else the whole display.
+    let (click_x, click_y) = match crate::reply::last_capture_area() {
+        Some((x, y, w, h)) => (
+            (x + norm_x * w).round() as i32,
+            (y + norm_y * h).round() as i32,
+        ),
+        None => {
+            let (disp_w, disp_h) = get_display_size(app_handle);
+            (
+                (norm_x * disp_w).round() as i32,
+                (norm_y * disp_h).round() as i32,
+            )
+        }
+    };
     let (disp_w, disp_h) = get_display_size(app_handle);
-    let click_x = (norm_x * disp_w).round() as i32;
-    let click_y = (norm_y * disp_h).round() as i32;
 
     log::info!(
         "Auto-focusing chat input box at screen coords ({click_x}, {click_y}) [norm: ({norm_x:.3}, {norm_y:.3}), display: {disp_w}x{disp_h}]"
@@ -192,25 +205,6 @@ where
         typed += 1;
     }
 
-    Ok(())
-}
-
-/// Types Backspace key events to erase `count` characters.
-pub fn backspace_keystrokes<F>(
-    mut send_key: F,
-    count: usize,
-    key_delay_ms: u64,
-) -> Result<(), String>
-where
-    F: FnMut(Stroke) -> Result<(), String>,
-{
-    let click = |key| Stroke::Key(key, Direction::Click);
-    for i in 0..count {
-        if i > 0 && key_delay_ms > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(key_delay_ms));
-        }
-        send_key(click(Key::Backspace)).map_err(|e| format!("Failed to backspace: {}", e))?;
-    }
     Ok(())
 }
 
@@ -494,15 +488,5 @@ mod tests {
             text.chars().count(),
             started.elapsed()
         );
-    }
-
-    #[test]
-    fn backspacing_sends_exact_number_of_backspace_keys() {
-        let mut kb = RecordingKeyboard::default();
-        backspace_keystrokes(|s| kb.send(s), 5, 0).unwrap();
-        assert_eq!(kb.events.len(), 5);
-        for event in kb.events {
-            assert_eq!(event, (Key::Backspace, Direction::Click));
-        }
     }
 }

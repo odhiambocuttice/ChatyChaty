@@ -19,7 +19,7 @@ on:
       asset-prefix:
         required: false
         type: string
-        default: "handy"
+        default: "chatelle"
       asset-name-pattern:
         required: false
         type: string
@@ -306,7 +306,7 @@ jobs:
           #     statically linking libomp.
           echo "TRANSCRIBE_CMAKE_ARGS=-DGGML_NATIVE=OFF -DGGML_OPENMP=OFF" >> $env:GITHUB_ENV
 
-      # Bundle the VC++ runtime app-local so Handy starts on machines without a
+      # Bundle the VC++ runtime app-local so Chatelle starts on machines without a
       # current Microsoft redistributable. build.rs stages DLLs from these dirs
       # into transcribe-libs/, using the same VS install that compiled the code.
       # x64 also needs vcomp140.dll for ggml OpenMP; ARM64 disables OpenMP.
@@ -338,8 +338,8 @@ jobs:
             }
             $dirs = "$($crt.FullName);$($omp.FullName)"
           }
-          Write-Host "HANDY_VC_REDIST_DIRS=$dirs"
-          Add-Content -Path $env:GITHUB_ENV -Value "HANDY_VC_REDIST_DIRS=$dirs"
+          Write-Host "CHATELLE_VC_REDIST_DIRS=$dirs"
+          Add-Content -Path $env:GITHUB_ENV -Value "CHATELLE_VC_REDIST_DIRS=$dirs"
 
       # MSI packaging verifies bundled .dll/.exe resources with signtool before
       # custom signing. Tauri's SDK lookup has no ARM64 host mapping, so pass
@@ -392,7 +392,7 @@ jobs:
       # transcribe-cpp-sys's CMake install during the cargo build, but nothing
       # ships them. Pre-build the app so that install dir exists, then expose it
       # via LD_LIBRARY_PATH so the AppImage's linuxdeploy can resolve
-      # libtranscribe.so (a NEEDED of `handy`) while bundling. tauri-action
+      # libtranscribe.so (a NEEDED of `chatelle`) while bundling. tauri-action
       # reuses this compile incrementally. build.rs stages the runtime and
       # dlopen'd modules into transcribe-libs/, which tauri.conf.json includes.
       - name: Pre-build and locate transcribe-cpp backend libs (Linux)
@@ -421,7 +421,7 @@ jobs:
           echo "Located transcribe-cpp libs in: $LIBDIR"
           ls -la "$LIBDIR"
           echo "LD_LIBRARY_PATH=$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-          # linuxdeploy resolves `handy`'s NEEDED libs via `ldd` and HARD-FAILS
+          # linuxdeploy resolves `chatelle`'s NEEDED libs via `ldd` and HARD-FAILS
           # on an unresolved one (it does not warn-and-skip). libtranscribe.so
           # lives only in the cargo build tree, so also publish it (and the ggml
           # libs it pulls in) to the system linker cache — belt-and-suspenders
@@ -557,7 +557,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # The runtime smoke test launches the packaged handy binary, which links
+          # The runtime smoke test launches the packaged chatelle binary, which links
           # GTK (via tao) even for the headless --list-devices path and therefore
           # needs a display to start. CI runners are headless, so provide a virtual
           # X server via xvfb-run.
@@ -594,17 +594,17 @@ jobs:
             local root="$1"
             local label="$2"
             local vulkan_icd="${3:-}"
-            # Run under a virtual X server: handy initializes GTK on startup even
+            # Run under a virtual X server: chatelle initializes GTK on startup even
             # on the headless --list-devices path, which fails without a display.
             # An AppImage audit supplies Mesa's software ICD so GPU registration
             # is deterministic even on a runner without physical graphics.
             if [ -n "$vulkan_icd" ]; then
               export VK_ICD_FILENAMES="$vulkan_icd"
             fi
-            HANDY_NO_GTK_LAYER_SHELL=1 \
-            LD_LIBRARY_PATH="${root}/usr/lib/Handy:${root}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
-              xvfb-run -a "${root}/usr/bin/handy" --list-devices \
-                >/tmp/handy-package-smoke.log 2>&1
+            CHATELLE_NO_GTK_LAYER_SHELL=1 \
+            LD_LIBRARY_PATH="${root}/usr/lib/Chatelle:${root}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+              xvfb-run -a "${root}/usr/bin/chatelle" --list-devices \
+                >/tmp/chatelle-package-smoke.log 2>&1
             echo "${label} --list-devices smoke passed"
           }
 
@@ -618,14 +618,14 @@ jobs:
               fi
               listing="$(mktemp)"
               dpkg-deb -c "$deb" > "$listing"
-              require_pattern "$listing" 'usr/bin/handy$' "handy binary"
-              require_pattern "$listing" 'usr/lib/Handy/libtranscribe\.so(\.[0-9]+)+$' "transcribe runtime library (SONAME)"
-              require_pattern "$listing" 'usr/lib/Handy/libggml-cpu.*\.so' "ggml CPU backend module"
-              # Handy's libs must stay out of the ldconfig-scanned /usr/lib
-              # (issue #1639): app-private libs belong in /usr/lib/Handy only.
-              # `[^/]+` excludes the Handy/ subdir, so only direct hits match.
+              require_pattern "$listing" 'usr/bin/chatelle$' "chatelle binary"
+              require_pattern "$listing" 'usr/lib/Chatelle/libtranscribe\.so(\.[0-9]+)+$' "transcribe runtime library (SONAME)"
+              require_pattern "$listing" 'usr/lib/Chatelle/libggml-cpu.*\.so' "ggml CPU backend module"
+              # Chatelle's libs must stay out of the ldconfig-scanned /usr/lib
+              #: app-private libs belong in /usr/lib/Chatelle only.
+              # `[^/]+` excludes the Chatelle/ subdir, so only direct hits match.
               if grep -Eq 'usr/lib/[^/]+\.so' "$listing"; then
-                echo "ERROR: libraries installed directly into /usr/lib (issue #1639):" >&2
+                echo "ERROR: libraries installed directly into /usr/lib:" >&2
                 grep -E 'usr/lib/[^/]+\.so' "$listing" >&2
                 exit 1
               fi
@@ -645,12 +645,12 @@ jobs:
               echo "Auditing rpm package: ${rpm_pkg}"
               listing="$(mktemp)"
               rpm -qpl "$rpm_pkg" > "$listing"
-              require_pattern "$listing" '/usr/bin/handy$' "handy binary"
-              require_pattern "$listing" '/usr/lib/Handy/libtranscribe\.so(\.[0-9]+)+$' "transcribe runtime library (SONAME)"
-              require_pattern "$listing" '/usr/lib/Handy/libggml-cpu.*\.so' "ggml CPU backend module"
-              # Same /usr/lib pollution guard as the deb audit (issue #1639).
+              require_pattern "$listing" '/usr/bin/chatelle$' "chatelle binary"
+              require_pattern "$listing" '/usr/lib/Chatelle/libtranscribe\.so(\.[0-9]+)+$' "transcribe runtime library (SONAME)"
+              require_pattern "$listing" '/usr/lib/Chatelle/libggml-cpu.*\.so' "ggml CPU backend module"
+              # Same /usr/lib pollution guard as the deb audit.
               if grep -Eq 'usr/lib/[^/]+\.so' "$listing"; then
-                echo "ERROR: libraries installed directly into /usr/lib (issue #1639):" >&2
+                echo "ERROR: libraries installed directly into /usr/lib:" >&2
                 grep -E 'usr/lib/[^/]+\.so' "$listing" >&2
                 exit 1
               fi
@@ -662,12 +662,12 @@ jobs:
             for appimage in "${BUNDLE_DIR}"/appimage/*.AppImage; do
               echo "Auditing AppImage package: ${appimage}"
               workdir="$(mktemp -d)"
-              cp "$appimage" "${workdir}/Handy.AppImage"
-              chmod +x "${workdir}/Handy.AppImage"
+              cp "$appimage" "${workdir}/Chatelle.AppImage"
+              chmod +x "${workdir}/Chatelle.AppImage"
               (
                 cd "$workdir"
-                ./Handy.AppImage --appimage-extract >/dev/null
-                require_path "squashfs-root/usr/bin/handy" "AppImage handy binary"
+                ./Chatelle.AppImage --appimage-extract >/dev/null
+                require_path "squashfs-root/usr/bin/chatelle" "AppImage chatelle binary"
                 # Gear Lever and other integration tools consume the root entry;
                 # appimagetool does not update the copy under usr/share/applications.
                 desktop_file="$(find squashfs-root -maxdepth 1 -type f -name '*.desktop' -print -quit)"
@@ -713,9 +713,9 @@ jobs:
                 # llvmpipe is intentionally not exposed as a compute device by
                 # ggml, but reaching this log proves the module loaded against a
                 # usable system Vulkan loader/ICD instead of failing silently.
-                if ! grep -q 'load_backend: loaded Vulkan backend' /tmp/handy-package-smoke.log; then
+                if ! grep -q 'load_backend: loaded Vulkan backend' /tmp/chatelle-package-smoke.log; then
                   echo "ERROR: AppImage could not initialize its Vulkan backend with a usable system ICD" >&2
-                  cat /tmp/handy-package-smoke.log >&2
+                  cat /tmp/chatelle-package-smoke.log >&2
                   exit 1
                 fi
               )
@@ -751,7 +751,7 @@ jobs:
           # VC++ runtime staging is mandatory for every Windows build.
           $stagedDlls = Get-ChildItem "src-tauri/transcribe-libs" -Filter "*.dll" -ErrorAction SilentlyContinue
           if (-not $stagedDlls) {
-            throw "src-tauri/transcribe-libs contains no DLLs; every Windows build must stage the app-local VC++ runtime (issue #1527)"
+            throw "src-tauri/transcribe-libs contains no DLLs; every Windows build must stage the app-local VC++ runtime"
           }
 
           # x64 also ships dynamic transcribe/ggml DLLs; ARM64 is otherwise static.
@@ -775,9 +775,9 @@ jobs:
           function Assert-PackageContents {
             param([string]$Root, [string]$Label)
 
-            $handy = Get-ChildItem $Root -Filter "handy.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $handy) {
-              throw "$Label package is missing handy.exe"
+            $chatelle = Get-ChildItem $Root -Filter "chatelle.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $chatelle) {
+              throw "$Label package is missing chatelle.exe"
             }
             foreach ($dll in $stagedDlls) {
               if (-not (Get-ChildItem $Root -Filter $dll.Name -Recurse -ErrorAction SilentlyContinue)) {
@@ -785,10 +785,10 @@ jobs:
               }
             }
 
-            $deviceOutput = (& $handy.FullName --list-devices | Out-String)
+            $deviceOutput = (& $chatelle.FullName --list-devices | Out-String)
             $deviceOutput | Write-Host
             if ($LASTEXITCODE -ne 0) {
-              throw "$Label handy.exe --list-devices failed"
+              throw "$Label chatelle.exe --list-devices failed"
             }
             if ("${{ inputs.target }}" -like "aarch64*" -and $deviceOutput -match "kind=(vulkan|cuda|metal|gpu)") {
               throw "$Label Windows ARM64 package unexpectedly exposed a GPU compute device"

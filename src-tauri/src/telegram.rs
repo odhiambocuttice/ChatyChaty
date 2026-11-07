@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
-pub const TELEGRAM_BOT_TOKEN_KEY: &str = "handy-telegram-bot-token";
-pub const TELEGRAM_CHAT_ID_KEY: &str = "handy-telegram-chat-id";
+pub const TELEGRAM_BOT_TOKEN_KEY: &str = "chatelle-telegram-bot-token";
+pub const TELEGRAM_CHAT_ID_KEY: &str = "chatelle-telegram-chat-id";
 
 const TELEGRAM_API_BASE: &str = "https://api.telegram.org";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(35);
@@ -334,7 +334,8 @@ fn handle_update(app: &AppHandle, token: &str, state: &TelegramState, update: &V
             if is_match {
                 *state.paired_chat_id.lock().unwrap() = Some(chat_id);
                 let _ = crate::key_store::write(TELEGRAM_CHAT_ID_KEY, &chat_id.to_string());
-                info!("Telegram bot paired with chat_id: {chat_id}");
+                // The chat ID identifies the Telegram account, so it stays out of the log.
+                info!("Telegram bot paired");
                 let _ = send_message(
                     token,
                     chat_id,

@@ -1,6 +1,6 @@
 const BRAND_NAME = "Chatelle";
 
-const HandyTextLogo = ({
+const ChatelleTextLogo = ({
   width = 140,
   height,
   className,
@@ -39,4 +39,4 @@ const HandyTextLogo = ({
   );
 };
 
-export default HandyTextLogo;
+export default ChatelleTextLogo;

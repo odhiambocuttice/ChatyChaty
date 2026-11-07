@@ -32,7 +32,7 @@ export const SegmentedControl: React.FC<SegmentedControlProps> = ({
           disabled={disabled}
           onClick={() => onChange(option.value)}
           className={`min-h-[30px] px-4 rounded-[7px] text-sm font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary ${
-            on ? "bg-background shadow-sm" : "hover:bg-wash"
+            on ? "bg-logo-primary text-white shadow-sm" : "hover:bg-wash"
           }`}
         >
           {option.label}

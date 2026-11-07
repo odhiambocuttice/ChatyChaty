@@ -9,7 +9,7 @@
 //! coalesced into it, so bursts of state changes never queue up native work.
 //!
 //! Why: native tray updates are the lever we control for the macOS tray
-//! disappearance bug (tauri-apps/tauri#12060, Handy #1948). Before this, every
+//! disappearance bug (tauri-apps/tauri#12060). Before this, every
 //! recording cycle rebuilt the full menu 3-6 times from several threads, and
 //! concurrent rebuilds could interleave and leave a stale menu behind.
 //!
@@ -186,7 +186,7 @@ pub fn get_icon_path(theme: AppTheme, state: TrayIconState, warning: bool) -> &'
             AppTheme::Light => "resources/tray_idle_warning_dark.png",
             // Linux never sets the warning flag (Secure Input is macOS-only),
             // but fall back to the normal icon just in case.
-            AppTheme::Colored => "resources/handy.png",
+            AppTheme::Colored => "resources/chatelle.png",
         };
     }
     match (theme, state) {
@@ -199,7 +199,7 @@ pub fn get_icon_path(theme: AppTheme, state: TrayIconState, warning: bool) -> &'
         (AppTheme::Light, TrayIconState::Recording) => "resources/tray_recording_dark.png",
         (AppTheme::Light, TrayIconState::Transcribing) => "resources/tray_transcribing_dark.png",
         // Colored theme uses pink icons (for Linux)
-        (AppTheme::Colored, TrayIconState::Idle) => "resources/handy.png",
+        (AppTheme::Colored, TrayIconState::Idle) => "resources/chatelle.png",
         (AppTheme::Colored, TrayIconState::Recording) => "resources/recording.png",
         (AppTheme::Colored, TrayIconState::Transcribing) => "resources/transcribing.png",
     }
@@ -422,15 +422,15 @@ pub fn tray_tooltip() -> String {
 
 fn version_label() -> String {
     if cfg!(debug_assertions) {
-        format!("Chatelle v{} (Dev)", env!("CARGO_PKG_VERSION"))
+        format!("Chatelle v{} Beta (Dev)", env!("CARGO_PKG_VERSION"))
     } else {
-        format!("Chatelle v{}", env!("CARGO_PKG_VERSION"))
+        format!("Chatelle v{} Beta", env!("CARGO_PKG_VERSION"))
     }
 }
 
 /// Builds the tray menu and tooltip for the given inputs. Pure with respect
 /// to app state: everything it depends on is in `inputs`, plus the
-/// process-constant `HANDY_DISABLE_UPDATER` env flag behind
+/// process-constant `CHATELLE_DISABLE_UPDATER` env flag behind
 /// `update_checks_forced_disabled()`, which cannot change during a run.
 fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri::Wry>, String)> {
     let strings = get_tray_translations(Some(inputs.locale.clone()));
@@ -462,9 +462,9 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     #[cfg(not(target_os = "macos"))]
     let (settings_accelerator, quit_accelerator) = (Some("Ctrl+,"), Some("Ctrl+Q"));
 
-    // Create common menu items
+    // Create common menu items. The version is in the tooltip, so the menu
+    // keeps to the two things people click: open Chatelle and quit.
     let version_label = version_label();
-    let version_i = MenuItem::with_id(app, "version", &version_label, false, None::<&str>)?;
     let settings_i = MenuItem::with_id(
         app,
         "settings",
@@ -480,8 +480,6 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         Menu::with_items(
             app,
             &[
-                &version_i,
-                &separator()?,
                 &cancel_i,
                 &separator()?,
                 &settings_i,
@@ -490,24 +488,14 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             ],
         )?
     } else {
-        Menu::with_items(
-            app,
-            &[
-                &version_i,
-                &separator()?,
-                &settings_i,
-                &separator()?,
-                &quit_i,
-            ],
-        )?
+        Menu::with_items(app, &[&settings_i, &separator()?, &quit_i])?
     };
 
-    // Both layouts start with [version, separator, ...]; slot the warning in
-    // right below the version line so it's the first actionable thing seen.
+    // Put the warning at the top so it's the first actionable thing seen.
     let mut tooltip = version_label;
     if let Some(warning_item) = secure_input_warning {
-        menu.insert(&warning_item, 2)?;
-        menu.insert(&separator()?, 3)?;
+        menu.insert(&warning_item, 0)?;
+        menu.insert(&separator()?, 1)?;
         tooltip = format!("{} — {}", tooltip, warning_item.text().unwrap_or_default());
     }
 
@@ -526,7 +514,7 @@ pub fn set_tray_visibility(app: &AppHandle, visible: bool) {
 /// Recovery for the macOS tray-disappearance bug (#1948, tauri-apps/tauri#12060):
 /// the `NSStatusItem` can silently vanish with no error surfaced to the app.
 /// Hiding and re-showing the tray recreates it with its current icon, menu and
-/// tooltip. Called when the user "relaunches" Handy while it is already running
+/// tooltip. Called when the user "relaunches" Chatelle while it is already running
 /// (`RunEvent::Reopen` for Spotlight/Finder/Dock, the single-instance callback
 /// for a second process) — the natural "where did my icon go?" moment — so a
 /// relaunch brings the icon back without a full quit.

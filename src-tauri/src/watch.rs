@@ -343,6 +343,19 @@ pub fn capture_window_jpeg(_window_id: u32) -> Result<Vec<u8>, String> {
     Err("Window capture is only supported on macOS and Windows".to_string())
 }
 
+/// Captures the window in front as JPEG bytes, with where that window sits
+/// on screen (x, y, width, height), so a point in the picture can be clicked.
+/// Fails when Chatelle itself is in front, so the caller can fall back to the
+/// whole display.
+pub fn capture_front_window_jpeg() -> Result<(Vec<u8>, (f64, f64, f64, f64)), String> {
+    let (win_id, pid, app_name, _, x, y, w, h) = get_front_window()?;
+    if pid == std::process::id() as i32 {
+        return Err(format!("{app_name} is Chatelle itself"));
+    }
+    let bytes = capture_window_jpeg(win_id)?;
+    Ok((bytes, (x as f64, y as f64, w as f64, h as f64)))
+}
+
 pub fn capture_watched_window() -> Result<Vec<u8>, String> {
     let win = {
         let guard = CURRENT_WINDOW.lock().unwrap();
@@ -552,7 +565,12 @@ fn send_telegram_alert(app: &AppHandle, draft: &str, _jpeg: Vec<u8>) {
         ]
     });
 
-    let text = format!("💬 *New message in chat!*\n\n📝 *Draft reply:*\n_{}_\n\nTap *Send Reply* to type and send on laptop.", draft);
+    // A short summary of the chat from this draft's screenshot, so the reply
+    // can be judged from the phone. Never stored.
+    let about = crate::reply::last_summary()
+        .map(|summary| format!("🧠 *What it's about:*\n{summary}\n\n"))
+        .unwrap_or_default();
+    let text = format!("💬 *New message in chat!*\n\n{about}📝 *Draft reply:*\n_{}_\n\nTap *Send Reply* to type and send on laptop.", draft);
     match crate::telegram::send_message(&tok, cid, &text, Some(keyboard)) {
         Ok(msg_id) => {
             *PENDING_REPLY.lock().unwrap() = Some(PendingReply {

@@ -121,6 +121,7 @@ pub enum TypingSpeed {
     #[default]
     Normal,
     Fast,
+    Ultra,
 }
 
 impl TypingSpeed {
@@ -133,19 +134,22 @@ impl TypingSpeed {
             TypingSpeed::Normal => 50,
             // About 600 words a minute.
             TypingSpeed::Fast => 20,
+            // About 2,400 words a minute: a four-sentence reply in about a
+            // second. Still a small gap, so fields that reject a burst as
+            // pasted text accept it.
+            TypingSpeed::Ultra => 5,
         }
     }
 }
 
-/// Which speech model transcribes. Parakeet types live while you speak;
-/// Qwen3-ASR makes fewer errors but types only after you stop.
+/// Which speech model transcribes. Only Parakeet is offered; settings saved
+/// when Qwen3-ASR was offered still load, as Parakeet.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SpeechModel {
     #[default]
+    #[serde(alias = "qwen3_asr")]
     Parakeet,
-    #[serde(rename = "qwen3_asr")]
-    Qwen3Asr,
 }
 
 /// How the transcribe shortcut's key events drive a recording.
@@ -206,7 +210,7 @@ impl SoundTheme {
 }
 
 /// UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
-/// and `Dark` force one of the two palettes Handy already ships.
+/// and `Dark` force one of the two palettes Chatelle already ships.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Theme {
@@ -312,6 +316,31 @@ pub struct AppSettings {
     /// Whether to automatically detect and focus the chat input box before typing.
     #[serde(default = "default_auto_focus_input")]
     pub auto_focus_input: bool,
+    /// Paste the text through the clipboard in one go, instead of typing it
+    /// one key press per character. Faster, but pages that block pasting
+    /// refuse it. On by default.
+    #[serde(default = "default_paste_with_clipboard")]
+    pub paste_with_clipboard: bool,
+    /// On the left or right edge, whether the dock shows each button's label
+    /// or only its icon.
+    #[serde(default = "default_dock_labels")]
+    pub dock_labels: bool,
+    /// Draft and Hint write three versions and wait for the user to pick one,
+    /// instead of typing the first draft straight away.
+    #[serde(default = "default_choose_before_typing")]
+    pub choose_before_typing: bool,
+}
+
+fn default_choose_before_typing() -> bool {
+    true
+}
+
+fn default_dock_labels() -> bool {
+    true
+}
+
+fn default_paste_with_clipboard() -> bool {
+    true
 }
 
 fn default_auto_focus_input() -> bool {
@@ -437,17 +466,6 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: draft_reply_hint_shortcut.to_string(),
         },
     );
-    let regenerate_reply_shortcut = "ctrl+shift+r";
-    bindings.insert(
-        "regenerate_reply".to_string(),
-        ShortcutBinding {
-            id: "regenerate_reply".to_string(),
-            name: "Regenerate reply".to_string(),
-            description: "Erases the last typed reply and drafts a fresh alternative.".to_string(),
-            default_binding: regenerate_reply_shortcut.to_string(),
-            current_binding: regenerate_reply_shortcut.to_string(),
-        },
-    );
     let watch_chat_shortcut = "ctrl+shift+w";
     bindings.insert(
         "watch_chat".to_string(),
@@ -505,6 +523,9 @@ pub fn get_default_settings() -> AppSettings {
         phone_microphone_port: None,
         show_floating_dock: default_show_floating_dock(),
         auto_focus_input: default_auto_focus_input(),
+        paste_with_clipboard: default_paste_with_clipboard(),
+        dock_labels: default_dock_labels(),
+        choose_before_typing: default_choose_before_typing(),
     }
 }
 
@@ -515,21 +536,12 @@ impl Default for AppSettings {
 }
 
 /// Startup entry point. Same load-or-create/salvage/migrate behavior as
-/// `get_settings`; kept as a named alias for call-site clarity, plus a
-/// one-time debug dump of the loaded settings.
+/// `get_settings`; kept as a named alias for call-site clarity. The settings
+/// themselves are not logged: they hold the user's setup (shortcuts,
+/// microphone, the phone link's key), and logs get shared.
 pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     let settings = get_settings(app);
-    debug!("Loaded settings: {:?}", settings_for_log(&settings));
-    settings
-}
-
-/// A copy of `settings` that is safe to write to the log: the phone
-/// microphone token would let anyone on the network use the microphone.
-fn settings_for_log(settings: &AppSettings) -> AppSettings {
-    let mut settings = settings.clone();
-    if settings.phone_microphone_token.is_some() {
-        settings.phone_microphone_token = Some("<redacted>".to_string());
-    }
+    debug!("Loaded settings");
     settings
 }
 
@@ -552,6 +564,15 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 
         if apply_settings_migrations(&mut settings, &settings_value) {
             updated = true;
+        }
+
+        // Drop shortcuts for actions that no longer exist, so they are not
+        // registered (and their keys not taken) on startup.
+        for retired in RETIRED_BINDINGS {
+            if settings.bindings.remove(retired).is_some() {
+                debug!("Removing retired binding: {retired}");
+                updated = true;
+            }
         }
 
         // Merge in any bindings added since this store was written.
@@ -662,6 +683,10 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
     store.set("settings", serde_json::to_value(&settings).unwrap());
 }
 
+/// Shortcuts of removed actions. "regenerate_reply" (Try Again) went when the
+/// picker's three replies and its new-replies button replaced it.
+const RETIRED_BINDINGS: [&str; 1] = ["regenerate_reply"];
+
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
     let settings = get_settings(app);
 
@@ -771,7 +796,7 @@ mod tests {
             "overlay_position": "bottom",
             "debug_mode": false,
             "log_level": 2,
-            "custom_words": ["Handy", "cjpais"],
+            "custom_words": ["Chatelle", "Telegram"],
             "model_unload_timeout": "min5",
             "word_correction_threshold": 0.18,
             "history_limit": 5,
@@ -879,19 +904,6 @@ mod tests {
         let settings: AppSettings = serde_json::from_value(stored).unwrap();
         assert_eq!(settings.phone_microphone_token, None);
         assert_eq!(settings.phone_microphone_port, None);
-    }
-
-    #[test]
-    fn logged_settings_hide_the_phone_token() {
-        let settings = AppSettings {
-            phone_microphone_token: Some("0123456789abcdef0123456789abcdef".to_string()),
-            ..get_default_settings()
-        };
-        let logged = format!("{:?}", settings_for_log(&settings));
-        assert!(!logged.contains("0123456789abcdef0123456789abcdef"));
-        assert!(logged.contains("phone_microphone_token"));
-        // The settings themselves keep the token.
-        assert!(settings.phone_microphone_token.is_some());
     }
 
     #[test]

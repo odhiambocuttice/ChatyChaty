@@ -13,7 +13,7 @@
 //! reuse, and interleaved small live allocations pin those pages, so the OS
 //! never gets them back: RSS grows by roughly the transient-buffer volume of
 //! each dictation, is never touched again, and slowly migrates to swap
-//! (issue #1792 — measured at ~15 MB retained per 2-minute dictation;
+//! (measured at ~15 MB retained per 2-minute dictation;
 //! pinning the threshold reduced that to ~0.5 MB).
 //!
 //! Both entry points are no-ops on non-glibc targets (Windows, macOS, musl):

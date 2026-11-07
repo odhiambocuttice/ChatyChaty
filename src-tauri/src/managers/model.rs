@@ -2,7 +2,7 @@
 //!
 //! Each model is pinned to a Hugging Face file. The one picked in settings is
 //! looked up in the shared Hugging Face cache (where other tools may already
-//! have put it) and in Handy's own models directory, and downloaded into the
+//! have put it) and in Chatelle's own models directory, and downloaded into the
 //! cache if missing.
 
 use crate::settings::{self, SpeechModel};
@@ -45,20 +45,10 @@ pub const PARAKEET: ModelFile = ModelFile {
     streams: true,
 };
 
-pub const QWEN3_ASR: ModelFile = ModelFile {
-    repo: "handy-computer/Qwen3-ASR-1.7B-gguf",
-    revision: "0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f",
-    filename: "Qwen3-ASR-1.7B-Q8_0.gguf",
-    size_bytes: 2_185_030_624,
-    name: "Qwen3-ASR 1.7B",
-    streams: false,
-};
-
 /// The pinned file for a model choice.
 pub fn model_file(model: SpeechModel) -> &'static ModelFile {
     match model {
         SpeechModel::Parakeet => &PARAKEET,
-        SpeechModel::Qwen3Asr => &QWEN3_ASR,
     }
 }
 
@@ -205,7 +195,7 @@ fn hf_snapshot_paths(caches: &[Cache], repo_id: &str, revision: &str) -> Vec<Pat
     snapshots.into_iter().map(|(_, _, path)| path).collect()
 }
 
-/// Bridges hf-hub's async download progress to Handy's `model-download-progress`
+/// Bridges hf-hub's async download progress to Chatelle's `model-download-progress`
 /// event. hf-hub clones the reporter, so shared state lives behind an `Arc`.
 #[derive(Clone)]
 struct HfDownloadProgress {
@@ -376,7 +366,7 @@ pub struct ModelManager {
 
 impl ModelManager {
     pub fn new(app_handle: &AppHandle) -> Result<Self> {
-        // Handy's own models directory: a manual drop-in of the file counts.
+        // Chatelle's own models directory: a manual drop-in of the file counts.
         let models_dir = crate::portable::app_data_dir(app_handle)
             .map_err(|e| anyhow::anyhow!("Failed to get app data dir: {}", e))?
             .join("models");

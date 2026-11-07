@@ -173,7 +173,7 @@ mod tests {
     fn page_has_token_and_strings() {
         let page = render_page("tok");
         assert!(page.contains("\"tok\""));
-        assert!(page.contains("\"Record\""));
+        assert!(page.contains("\"Tap to record\""));
         assert!(page.contains("Opened in another tab"));
         assert!(page.contains("Could not start the microphone"));
         // No favicon request, so no rejected request in the log.

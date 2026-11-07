@@ -1,4 +1,4 @@
-//! Handy-keys based keyboard shortcut implementation
+//! Chatelle-keys based keyboard shortcut implementation
 //!
 //! This module provides an alternative to Tauri's global-shortcut plugin
 //! using the handy-keys library for more control over keyboard events.
@@ -480,7 +480,7 @@ pub fn start_handy_keys_recording(app: AppHandle, binding_id: String) -> Result<
 
     // While Secure Input is active the tap receives no KeyDown/KeyUp, so the
     // recorder would silently capture just the modifier and overwrite the
-    // binding with it (issue #1578). Refuse instead; the frontend maps this
+    // binding with it. Refuse instead; the frontend maps this
     // marker to a localized explanation, and the noted impact makes the
     // warning banner appear with the full story.
     if crate::secure_input::is_enabled_now() {

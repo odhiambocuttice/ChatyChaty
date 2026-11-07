@@ -11,14 +11,14 @@ The installers are built by GitHub Actions. There is no release page, so you dow
 1. Open the [Actions page](https://github.com/odhiambocuttice/ChatyChaty/actions) and click the latest green **Main Branch Build**. You need to be logged in to GitHub.
 2. Under **Artifacts**, download the one for your computer and unzip it:
 
-   | Computer                 | Artifact                                      |
-   | ------------------------ | --------------------------------------------- |
-   | Mac, Apple Silicon (M1+) | `handy-aarch64-apple-darwin`                  |
-   | Mac, Intel               | `handy-x86_64-apple-darwin`                   |
-   | Windows                  | `handy-x86_64-pc-windows-msvc`                |
-   | Windows on ARM           | `handy-aarch64-pc-windows-msvc`               |
-   | Linux, AppImage or rpm   | `handy-ubuntu-24.04-x86_64-unknown-linux-gnu` |
-   | Linux, deb               | `handy-ubuntu-22.04-x86_64-unknown-linux-gnu` |
+   | Computer                 | Artifact                                         |
+   | ------------------------ | ------------------------------------------------ |
+   | Mac, Apple Silicon (M1+) | `chatelle-aarch64-apple-darwin`                  |
+   | Mac, Intel               | `chatelle-x86_64-apple-darwin`                   |
+   | Windows                  | `chatelle-x86_64-pc-windows-msvc`                |
+   | Windows on ARM           | `chatelle-aarch64-pc-windows-msvc`               |
+   | Linux, AppImage or rpm   | `chatelle-ubuntu-24.04-x86_64-unknown-linux-gnu` |
+   | Linux, deb               | `chatelle-ubuntu-22.04-x86_64-unknown-linux-gnu` |
 
 3. Install it. These builds are not signed, so your computer will warn you the first time:
    - **Mac:** drag `Chatelle.app` into Applications. In Terminal, run `xattr -cr /Applications/Chatelle.app`, then right-click the app and choose **Open**.
@@ -43,8 +43,8 @@ Chatelle transcribes English with [Parakeet Unified English 0.6B](https://huggin
 ## Troubleshooting
 
 - **Nothing is typed (Mac):** check System Settings → Privacy & Security → Accessibility and make sure Chatelle is switched on. If you changed the app, switch it off and on again.
-- **The model will not download (proxy or firewall):** download [this file](https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-Q8_0.gguf) in a browser without renaming it. Put it in the `models` folder inside Chatelle's data folder (`~/Library/Application Support/com.odhiambocuttice.chatelle/` on a Mac, `%APPDATA%\com.odhiambocuttice.chatelle\` on Windows, `~/.config/com.odhiambocuttice.chatelle/` on Linux). Then restart Chatelle.
-- **Logs:** `~/Library/Logs/com.odhiambocuttice.chatelle/handy.log` on a Mac.
+- **The model will not download (proxy or firewall):** download [this file](https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-Q8_0.gguf) in a browser without renaming it. Put it in the `models` folder inside Chatelle's data folder (`~/Library/Application Support/com.chatelle.app/` on a Mac, `%APPDATA%\com.chatelle.app\` on Windows, `~/.config/com.chatelle.app/` on Linux). Then restart Chatelle.
+- **Logs:** `~/Library/Logs/com.chatelle.app/chatelle.log` on a Mac.
 
 ## Build from source
 
@@ -52,4 +52,4 @@ See [BUILD.md](BUILD.md).
 
 ## License
 
-MIT. Started from [cjpais/Handy](https://github.com/cjpais/Handy).
+MIT. See [LICENSE](LICENSE).

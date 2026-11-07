@@ -2,14 +2,16 @@ import { listen } from "@tauri-apps/api/event";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Sparkles,
+  WandSparkles,
+  RotateCcw,
   Mic,
-  RefreshCw,
-  Radio,
-  Eye,
+  Bell,
   ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
   X,
 } from "lucide-react";
+import AutoreplyIcon from "@/components/icons/AutoreplyIcon";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
 import type {
@@ -28,7 +30,8 @@ type OverlayState =
   | "transcribing"
   | "drafting"
   | "dock"
-  | "hinting";
+  | "hinting"
+  | "choosing";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -76,6 +79,10 @@ const RecordingOverlay: React.FC = () => {
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  // Side dock only: labels shown, or icons only. Saved in settings.
+  const [dockLabels, setDockLabels] = useState(true);
+  // The drafts on offer while state is "choosing".
+  const [choices, setChoices] = useState<string[]>([]);
   const [isWatching, setIsWatching] = useState(false);
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
@@ -93,7 +100,11 @@ const RecordingOverlay: React.FC = () => {
         // Reset synchronously before settings I/O. A fast microphone can emit
         // recording-ready while the awaits below are in flight; resetting after
         // them would overwrite that event and leave the overlay stuck arming.
-        if (overlayState === "recording" || overlayState === "streaming") {
+        if (
+          overlayState === "recording" ||
+          overlayState === "streaming" ||
+          overlayState === "hinting"
+        ) {
           setCaptureReady(false);
           smoothedLevelsRef.current = Array(16).fill(0);
           setLevels(Array(WAVE_BARS).fill(0));
@@ -107,6 +118,7 @@ const RecordingOverlay: React.FC = () => {
           const settings = await commands.getAppSettings();
           if (settings.status === "ok" && settings.data.overlay_position) {
             setPosition(settings.data.overlay_position);
+            setDockLabels(settings.data.dock_labels ?? true);
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -129,8 +141,9 @@ const RecordingOverlay: React.FC = () => {
             settings.data.show_floating_dock &&
             settings.data.overlay_style !== "none"
           ) {
-            setState("dock");
-            setIsVisible(true);
+            // Let the backend show the dock: it also resizes the window,
+            // which still has the size of the state that just ended.
+            await commands.showDockOverlay();
             return;
           }
         } catch {
@@ -193,6 +206,13 @@ const RecordingOverlay: React.FC = () => {
         },
       );
 
+      const unlistenChoices = await listen<string[]>(
+        "draft-choices",
+        (event) => {
+          setChoices(event.payload);
+        },
+      );
+
       const unlistenWatch = await listen<boolean>(
         "watch-state-changed",
         (event) => {
@@ -208,8 +228,9 @@ const RecordingOverlay: React.FC = () => {
             res.data.show_floating_dock &&
             res.data.overlay_style !== "none"
           ) {
-            setState("dock");
-            setIsVisible(true);
+            // The page can reload while the window has another state's size
+            // (the hint pill), so the backend resizes it as it shows the dock.
+            return commands.showDockOverlay();
           }
         })
         .catch(() => {});
@@ -230,6 +251,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenPhase();
         unlistenModel();
         unlistenWatch();
+        unlistenChoices();
         clearTimeout(modelLoadTimerRef.current);
       };
     };
@@ -334,7 +356,11 @@ const RecordingOverlay: React.FC = () => {
   const workingRow = (label: string, showCancel: boolean) => (
     <div className="sbase">
       <div className="sbase-l">
-        <span className="sspinner" />
+        <span className="sdots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
       </div>
       <span className="swork-label">{label}</span>
       <div className="sbase-r">{showCancel && cancelBtn}</div>
@@ -345,8 +371,8 @@ const RecordingOverlay: React.FC = () => {
     <div className="sdock">
       <button
         type="button"
-        className="sdock-btn sdock-btn-primary"
-        title={t("overlay.dock.draftTooltip", "Draft reply to chat on screen")}
+        className="sdock-btn"
+        title={t("overlay.dock.draftTooltip", "Read the chat and type a reply")}
         onClick={async () => {
           setState("drafting");
           try {
@@ -356,8 +382,32 @@ const RecordingOverlay: React.FC = () => {
           }
         }}
       >
-        <Sparkles className="w-3.5 h-3.5 text-logo-primary shrink-0" />
-        <span className="sdock-label">{t("overlay.dock.draft", "Draft")}</span>
+        <span className="sdock-ico">
+          <AutoreplyIcon />
+        </span>
+        <span className="sdock-label">
+          {t("overlay.dock.draft", "AI Reply")}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className="sdock-btn"
+        title={t("overlay.dock.dictateTooltip", "Type what you say")}
+        onClick={async () => {
+          try {
+            await commands.triggerTranscribeToggle();
+          } catch (e) {
+            console.error("Transcribe toggle failed:", e);
+          }
+        }}
+      >
+        <span className="sdock-ico">
+          <Mic />
+        </span>
+        <span className="sdock-label">
+          {t("overlay.dock.dictate", "Voice Reply")}
+        </span>
       </button>
 
       <button
@@ -365,7 +415,7 @@ const RecordingOverlay: React.FC = () => {
         className="sdock-btn"
         title={t(
           "overlay.dock.hintTooltip",
-          "Speak a voice hint for the reply",
+          "Tell AI what the reply should say",
         )}
         onClick={async () => {
           setState("hinting");
@@ -376,57 +426,21 @@ const RecordingOverlay: React.FC = () => {
           }
         }}
       >
-        <Mic className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-        <span className="sdock-label">{t("overlay.dock.hint", "Hint")}</span>
-      </button>
-
-      <button
-        type="button"
-        className="sdock-btn"
-        title={t(
-          "overlay.dock.rerollTooltip",
-          "Erase previous reply and draft an alternative",
-        )}
-        onClick={async () => {
-          setState("drafting");
-          try {
-            await commands.triggerRegenerateReply();
-          } catch (e) {
-            console.error("Regenerate reply failed:", e);
-          }
-        }}
-      >
-        <RefreshCw className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-        <span className="sdock-label">
-          {t("overlay.dock.reroll", "Re-roll")}
+        <span className="sdock-ico">
+          <WandSparkles />
         </span>
-      </button>
-
-      <button
-        type="button"
-        className="sdock-btn"
-        title={t(
-          "overlay.dock.dictateTooltip",
-          "Transcribe your voice into text",
-        )}
-        onClick={async () => {
-          try {
-            await commands.triggerTranscribeToggle();
-          } catch (e) {
-            console.error("Transcribe toggle failed:", e);
-          }
-        }}
-      >
-        <Radio className="w-3.5 h-3.5 text-amber-400 shrink-0" />
         <span className="sdock-label">
-          {t("overlay.dock.dictate", "Dictate")}
+          {t("overlay.dock.hint", "Guide AI")}
         </span>
       </button>
 
       <button
         type="button"
         className={`sdock-btn ${isWatching ? "active" : ""}`}
-        title={t("overlay.dock.watchTooltip", "Watch chat and alert Telegram")}
+        title={t(
+          "overlay.dock.watchTooltip",
+          "Tell my Telegram about new messages",
+        )}
         onClick={async () => {
           try {
             const res = await commands.toggleWatchSession();
@@ -438,15 +452,36 @@ const RecordingOverlay: React.FC = () => {
           }
         }}
       >
-        {isWatching ? (
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        ) : (
-          <Eye className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-        )}
-        <span className="sdock-label">{t("overlay.dock.watch", "Watch")}</span>
+        <span className="sdock-ico">
+          {isWatching ? <span className="sdock-live-dot" /> : <Bell />}
+        </span>
+        <span className="sdock-label">{t("overlay.dock.watch", "Alerts")}</span>
       </button>
 
       <div className="sdock-actions">
+        {(position === "left" || position === "right") && (
+          <button
+            type="button"
+            className="sdock-icon-btn"
+            title={
+              dockLabels
+                ? t("overlay.dock.iconsOnly", "Show icons only")
+                : t("overlay.dock.showLabels", "Show labels")
+            }
+            onClick={() => {
+              const next = !dockLabels;
+              setDockLabels(next);
+              commands.changeDockLabelsSetting(next).catch(() => {});
+            }}
+          >
+            {/* Points the way the dock grows or shrinks from its edge. */}
+            {(position === "left") === dockLabels ? (
+              <ChevronsLeft className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronsRight className="w-3.5 h-3.5" />
+            )}
+          </button>
+        )}
         <button
           type="button"
           className="sdock-icon-btn"
@@ -457,8 +492,8 @@ const RecordingOverlay: React.FC = () => {
         </button>
         <button
           type="button"
-          className="sdock-icon-btn"
-          title={t("overlay.dock.hide", "Close dock")}
+          className="sdock-icon-btn sdock-icon-btn-close"
+          title={t("overlay.dock.hide", "Hide buttons")}
           onClick={() => commands.hideDockOverlay()}
         >
           <X className="w-3.5 h-3.5" />
@@ -468,7 +503,7 @@ const RecordingOverlay: React.FC = () => {
   );
 
   const hintingRow = (
-    <div className="sbase">
+    <div className="sbase shint-row">
       <div className="sbase-l">
         <span className="sdot ready sdot-pulse" />
         <span className="shint-label">
@@ -529,10 +564,10 @@ const RecordingOverlay: React.FC = () => {
             <button
               type="button"
               className="sdock-expand-btn"
-              title={t("overlay.dock.expand", "Show Action Dock")}
+              title={t("overlay.dock.expand", "Show buttons")}
               onClick={() => setCollapsed(false)}
             >
-              ✨
+              <AutoreplyIcon className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -544,7 +579,73 @@ const RecordingOverlay: React.FC = () => {
         dir={direction}
         className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
       >
-        <div className="scard dock">{dockRow}</div>
+        <div className={`scard dock ${dockLabels ? "" : "icons-only"}`}>
+          {dockRow}
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "choosing") {
+    return (
+      <div
+        dir={direction}
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard choosing">
+          <div className="schoose-head">
+            <span className="schoose-title">
+              {t("overlay.choose.title", "Pick a reply")}
+            </span>
+            <button
+              type="button"
+              className="sdock-icon-btn schoose-regenerate"
+              title={t("overlay.choose.regenerate", "Write three new replies")}
+              onClick={() => {
+                setState("drafting");
+                commands.regenerateChoices();
+              }}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              className="sdock-icon-btn"
+              title={t("overlay.choose.cancel", "Cancel (Esc)")}
+              onClick={() => commands.cancelOperation()}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="stones">
+            {(["shorter", "longer", "funnier", "serious"] as const).map(
+              (tone) => (
+                <button
+                  key={tone}
+                  type="button"
+                  className="stone"
+                  onClick={() => {
+                    setState("drafting");
+                    commands.retoneChoices(tone);
+                  }}
+                >
+                  {t(`overlay.choose.tone.${tone}`)}
+                </button>
+              ),
+            )}
+          </div>
+          {choices.map((choice, index) => (
+            <button
+              key={choice}
+              type="button"
+              className="schoice"
+              onClick={() => commands.chooseDraft(index)}
+            >
+              <span className="schoice-num">{index + 1}</span>
+              <span className="schoice-text">{choice}</span>
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
@@ -555,7 +656,7 @@ const RecordingOverlay: React.FC = () => {
         dir={direction}
         className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
       >
-        <div className="scard compact cworking">{hintingRow}</div>
+        <div className="scard hinting">{hintingRow}</div>
       </div>
     );
   }

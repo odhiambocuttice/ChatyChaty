@@ -331,6 +331,17 @@ async fn handle_connection<S: Sink>(
             let ws = WebSocketStream::from_partially_read(stream, rest, Role::Server, None).await;
             run_phone(ws, peer, shared).await;
         }
+        // Lets the page tell a dropped connection from an outdated link: an
+        // outdated link gets the 403 above instead.
+        ("/ping", _) => {
+            respond(
+                &mut stream,
+                "204 No Content",
+                &[("Cache-Control", "no-store")],
+                b"",
+            )
+            .await
+        }
         _ => respond(&mut stream, "404 Not Found", &[], b"").await,
     }
 }
@@ -667,11 +678,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ping_tells_a_current_link_from_an_old_one() {
+        let h = start().await;
+        let current = get(h.port, &format!("/ping?t={}", h.token)).await;
+        assert!(current.starts_with("HTTP/1.1 204"), "{current}");
+        let old = get(h.port, "/ping?t=old").await;
+        assert!(old.starts_with("HTTP/1.1 403"), "{old}");
+    }
+
+    #[tokio::test]
     async fn page_served_with_token() {
         let h = start().await;
         let response = get(h.port, &format!("/?t={}", h.token)).await;
         assert!(response.starts_with("HTTP/1.1 200"), "{response}");
-        assert!(response.contains("Record"));
+        assert!(response.contains("Tap to record"));
     }
 
     /// Waits for the state message that the server sends after it registers

@@ -6,8 +6,6 @@ A list of things Chatelle could do next. These are ideas, not commitments. Each 
 
 **Status:** 💡 idea · 🚧 in progress · ✅ done · ❌ dropped
 
-> Upstream [cjpais/Handy](https://github.com/cjpais/Handy) is under a feature freeze. That only matters if a feature is sent back upstream; this fork can add anything.
-
 ## Suggested order
 
 1. Speak a hint before drafting (#2)

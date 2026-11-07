@@ -370,7 +370,7 @@ impl ShortcutAction for TranscribeAction {
                                 // before the next session can start.
                                 let session = RECORDING_SESSION.load(Ordering::SeqCst);
                                 // Off the main thread: typing sleeps between keys, and
-                                // typing into Handy's own windows needs the main thread free.
+                                // typing into Chatelle's own windows needs the main thread free.
                                 std::thread::Builder::new()
                                     .name("paste".into())
                                     .spawn(move || {
@@ -437,7 +437,7 @@ impl ShortcutAction for TranscribeAction {
 
                             error!("Transcription failed: {}", err);
                             // Surface the failure to the UI (toast). The full
-                            // message is also in handy.log via the line above.
+                            // message is also in chatelle.log via the line above.
                             let _ = ah.emit("transcription-error", err.to_string());
                             utils::hide_recording_overlay(&ah);
                             set_tray_state(&ah, TrayIconState::Idle);
@@ -499,11 +499,142 @@ fn restore_overlay_or_hide(app: &AppHandle) {
 static DRAFTING: AtomicBool = AtomicBool::new(false);
 static DRAFT_CANCEL_GENERATION: AtomicU64 = AtomicU64::new(0);
 static HINT_SCREEN_JPEG: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
+static HINT_START_TIME: AtomicU64 = AtomicU64::new(0);
+static HINT_LOCKED_TAP: AtomicBool = AtomicBool::new(false);
+
+/// Drafts on offer in the overlay, waiting for the user to pick one.
+struct PendingChoices {
+    drafts: Vec<String>,
+    jpeg: Vec<u8>,
+    hint: Option<String>,
+}
+
+static PENDING_CHOICES: std::sync::Mutex<Option<PendingChoices>> = std::sync::Mutex::new(None);
 
 /// Cancels an in-flight draft reply operation.
 pub fn cancel_drafting() {
     DRAFT_CANCEL_GENERATION.fetch_add(1, Ordering::SeqCst);
     DRAFTING.store(false, Ordering::SeqCst);
+    HINT_LOCKED_TAP.store(false, Ordering::SeqCst);
+    *PENDING_CHOICES.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// True while a draft is being written or waits to be picked, so the cancel
+/// shortcut (Esc) works then too, not only while recording.
+pub fn is_drafting() -> bool {
+    DRAFTING.load(Ordering::SeqCst) || PENDING_CHOICES.lock().map(|p| p.is_some()).unwrap_or(false)
+}
+
+/// Shows the drafts in the overlay and waits for `choose_draft`; Esc cancels.
+fn offer_choices(app: &AppHandle, drafts: Vec<String>, jpeg: Vec<u8>, hint: Option<String>) {
+    let _ = app.emit("draft-choices", drafts.clone());
+    *PENDING_CHOICES.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some(PendingChoices { drafts, jpeg, hint });
+    set_tray_state(app, TrayIconState::Idle);
+    crate::overlay::show_choosing_overlay(app);
+    shortcut::register_cancel_shortcut(app);
+}
+
+/// Throws away the drafts on offer and writes three new ones from the same
+/// screenshot and hint, asked not to repeat the ones just shown.
+pub fn regenerate_choices(app: &AppHandle) -> Result<(), String> {
+    rewrite_choices(app, None)
+}
+
+/// Rewrites the drafts on offer with a tone button's change ("shorter",
+/// "longer", "funnier", "serious"), keeping what they say.
+pub fn retone_choices(app: &AppHandle, tone: &str) -> Result<(), String> {
+    let instruction =
+        crate::reply::tone_instruction(tone).ok_or_else(|| format!("Unknown tone: {tone}"))?;
+    rewrite_choices(app, Some(instruction))
+}
+
+/// Writes new drafts for the picker: fresh ones (no tone), or the ones on
+/// offer changed by a tone instruction.
+fn rewrite_choices(app: &AppHandle, tone: Option<&'static str>) -> Result<(), String> {
+    let pending = PENDING_CHOICES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+        .ok_or("No drafts are waiting to be picked")?;
+    if DRAFTING.swap(true, Ordering::SeqCst) {
+        return Err("A reply is already being drafted".to_string());
+    }
+    let generation = DRAFT_CANCEL_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    set_tray_state(app, TrayIconState::Transcribing);
+    utils::show_drafting_overlay(app);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let shown = pending.drafts.join(" / ");
+        let result = match tone {
+            // Fresh replies: unlike the ones just shown.
+            None => crate::reply::draft_for_typing(
+                &pending.jpeg,
+                pending.hint.as_deref(),
+                Some(&shown),
+                true,
+                None,
+            ),
+            // The same replies, changed: they are the starting point.
+            Some(instruction) => {
+                let tone =
+                    format!("{instruction} Keep what these replies say, only change how: {shown}");
+                crate::reply::draft_for_typing(
+                    &pending.jpeg,
+                    pending.hint.as_deref(),
+                    None,
+                    true,
+                    Some(&tone),
+                )
+            }
+        };
+        if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
+            match result {
+                Ok(drafts) if !drafts.is_empty() => {
+                    offer_choices(&app, drafts, pending.jpeg, pending.hint);
+                }
+                Ok(_) => restore_overlay_or_hide(&app),
+                Err(e) => {
+                    error!("Failed to write new drafts: {e}");
+                    let _ = app.emit("draft-reply-error", e);
+                    set_tray_state(&app, TrayIconState::Idle);
+                    restore_overlay_or_hide(&app);
+                }
+            }
+        }
+        DRAFTING.store(false, Ordering::SeqCst);
+    });
+    Ok(())
+}
+
+/// Types the draft the user picked (0-based) and learns from it as from any
+/// typed draft.
+pub fn choose_draft(app: &AppHandle, index: usize) -> Result<(), String> {
+    let pending = PENDING_CHOICES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+        .ok_or("No drafts are waiting to be picked")?;
+    let reply = pending
+        .drafts
+        .get(index)
+        .cloned()
+        .ok_or("There is no draft with that number")?;
+    shortcut::unregister_cancel_shortcut(app);
+    let app = app.clone();
+    // Typing sleeps between keys: never on the command's thread.
+    std::thread::spawn(move || {
+        crate::reply::accept_draft(&reply);
+        if let Some(coords) = crate::reply::get_last_input_box() {
+            crate::input::focus_input_box(&app, coords);
+        }
+        if let Err(e) = crate::clipboard::paste(reply, app.clone()) {
+            error!("Failed to type the chosen draft: {e}");
+            let _ = app.emit("draft-reply-error", e.to_string());
+        }
+        restore_overlay_or_hide(&app);
+    });
+    Ok(())
 }
 
 impl ShortcutAction for DraftReplyAction {
@@ -524,7 +655,11 @@ impl ShortcutAction for DraftReplyAction {
         // Reading the screen and calling the model take seconds, and typing sleeps
         // between keys: none of it may run on the shortcut's thread.
         std::thread::spawn(move || {
-            let result = crate::reply::draft_reply_from_screen();
+            let choose = crate::settings::get_settings(&app_clone).choose_before_typing;
+            let result = crate::reply::capture_screen_jpeg().and_then(|jpeg| {
+                crate::reply::draft_for_typing(&jpeg, None, None, choose, None)
+                    .map(|drafts| (jpeg, drafts))
+            });
             shortcut::unregister_cancel_shortcut(&app_clone);
 
             if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) != generation {
@@ -536,7 +671,7 @@ impl ShortcutAction for DraftReplyAction {
             }
 
             match result {
-                Ok(reply) => {
+                Ok((jpeg, drafts)) => {
                     play_feedback_sound(&app_clone, SoundType::Stop);
                     if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) != generation {
                         debug!("Draft reply operation cancelled before typing");
@@ -546,16 +681,20 @@ impl ShortcutAction for DraftReplyAction {
                         return;
                     }
 
-                    if let Some(coords) = crate::reply::get_last_input_box() {
-                        crate::input::focus_input_box(&app_clone, coords);
-                    }
-                    if let Err(e) = crate::clipboard::paste(reply, app_clone.clone()) {
-                        error!("Failed to type the drafted reply: {e}");
-                        let _ = app_clone.emit("draft-reply-error", e.to_string());
-                    }
-                    if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
-                        restore_overlay_or_hide(&app_clone);
-                        set_tray_state(&app_clone, TrayIconState::Idle);
+                    if drafts.len() > 1 {
+                        offer_choices(&app_clone, drafts, jpeg, None);
+                    } else if let Some(reply) = drafts.into_iter().next() {
+                        if let Some(coords) = crate::reply::get_last_input_box() {
+                            crate::input::focus_input_box(&app_clone, coords);
+                        }
+                        if let Err(e) = crate::clipboard::paste(reply, app_clone.clone()) {
+                            error!("Failed to type the drafted reply: {e}");
+                            let _ = app_clone.emit("draft-reply-error", e.to_string());
+                        }
+                        if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
+                            restore_overlay_or_hide(&app_clone);
+                            set_tray_state(&app_clone, TrayIconState::Idle);
+                        }
                     }
                 }
                 Err(e) => {
@@ -576,9 +715,15 @@ impl ShortcutAction for DraftReplyAction {
 struct DraftReplyWithHintAction;
 
 impl ShortcutAction for DraftReplyWithHintAction {
-    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         let rm = app.state::<Arc<AudioRecordingManager>>();
         if rm.is_recording() {
+            if HINT_LOCKED_TAP.load(Ordering::SeqCst) {
+                // If recording was locked on by a previous tap, this second press stops it!
+                HINT_LOCKED_TAP.store(false, Ordering::SeqCst);
+                self.stop(app, binding_id, shortcut_str);
+                return;
+            }
             debug!("Already recording audio");
             return;
         }
@@ -586,6 +731,15 @@ impl ShortcutAction for DraftReplyWithHintAction {
             debug!("A reply is already being drafted");
             return;
         }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        HINT_START_TIME.store(now, Ordering::SeqCst);
+        HINT_LOCKED_TAP.store(false, Ordering::SeqCst);
+
+        let _ = app.emit("hint-recording-started", ());
 
         // Kick off transcription model preloading if not yet loaded
         let tm = app.state::<Arc<TranscriptionManager>>();
@@ -621,17 +775,52 @@ impl ShortcutAction for DraftReplyWithHintAction {
                 });
             }
             Err(e) => {
+                // Undo the start: stop() returns early when nothing is
+                // recording, so it would never clear DRAFTING, and every
+                // later draft would be refused as already running.
                 warn!("Failed to start recording for voice hint: {e}");
+                rm.resume_media();
+                DRAFTING.store(false, Ordering::SeqCst);
+                let _ = app.emit("hint-recording-stopped", ());
+                let _ = app.emit(
+                    "draft-reply-error",
+                    format!("Could not start the microphone: {e}"),
+                );
+                set_tray_state(app, TrayIconState::Idle);
+                restore_overlay_or_hide(app);
+                return;
             }
         }
 
         set_tray_state(app, TrayIconState::Recording);
-        show_recording_overlay(app);
+        crate::overlay::show_hinting_overlay(app);
         shortcut::register_cancel_shortcut(app);
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
+        if !rm.is_recording() {
+            return;
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let start = HINT_START_TIME.load(Ordering::SeqCst);
+        let elapsed = now.saturating_sub(start);
+
+        // If stopped almost immediately from a shortcut release (< 250ms),
+        // treat this as a tap that locks recording on so the user can speak freely.
+        if elapsed < 250 && !HINT_LOCKED_TAP.load(Ordering::SeqCst) {
+            debug!("Hint shortcut released within {elapsed}ms - locking recording on for tap");
+            HINT_LOCKED_TAP.store(true, Ordering::SeqCst);
+            return;
+        }
+        HINT_LOCKED_TAP.store(false, Ordering::SeqCst);
+
+        let _ = app.emit("hint-recording-stopped", ());
+
         let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
         rm.invalidate_recording_readiness();
         shortcut::unregister_cancel_shortcut(app);
@@ -692,12 +881,11 @@ impl ShortcutAction for DraftReplyWithHintAction {
                 None => crate::reply::capture_screen_jpeg(),
             };
 
-            let result = match jpeg_bytes {
-                Ok(bytes) => {
-                    crate::reply::draft_reply_from_jpeg_with_options(&bytes, hint.as_deref(), None)
-                }
-                Err(e) => Err(e),
-            };
+            let choose = crate::settings::get_settings(&ah).choose_before_typing;
+            let result = jpeg_bytes.and_then(|bytes| {
+                crate::reply::draft_for_typing(&bytes, hint.as_deref(), None, choose, None)
+                    .map(|drafts| (bytes, drafts))
+            });
 
             if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) != generation
                 || rm.was_cancelled_since(cancel_generation)
@@ -710,13 +898,18 @@ impl ShortcutAction for DraftReplyWithHintAction {
             }
 
             match result {
-                Ok(reply) => {
-                    if let Some(coords) = crate::reply::get_last_input_box() {
-                        crate::input::focus_input_box(&ah, coords);
-                    }
-                    if let Err(e) = crate::clipboard::paste(reply, ah.clone()) {
-                        error!("Failed to type hint-drafted reply: {e}");
-                        let _ = ah.emit("draft-reply-error", e.to_string());
+                Ok((bytes, drafts)) if drafts.len() > 1 => {
+                    offer_choices(&ah, drafts, bytes, hint);
+                }
+                Ok((_, drafts)) => {
+                    if let Some(reply) = drafts.into_iter().next() {
+                        if let Some(coords) = crate::reply::get_last_input_box() {
+                            crate::input::focus_input_box(&ah, coords);
+                        }
+                        if let Err(e) = crate::clipboard::paste(reply, ah.clone()) {
+                            error!("Failed to type hint-drafted reply: {e}");
+                            let _ = ah.emit("draft-reply-error", e.to_string());
+                        }
                     }
                     if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
                         restore_overlay_or_hide(&ah);
@@ -733,86 +926,6 @@ impl ShortcutAction for DraftReplyWithHintAction {
             DRAFTING.store(false, Ordering::SeqCst);
         });
     }
-}
-
-// Regenerate Reply Action: erases the last typed reply and drafts a fresh alternative
-struct RegenerateReplyAction;
-
-impl ShortcutAction for RegenerateReplyAction {
-    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
-        if DRAFTING.swap(true, Ordering::SeqCst) {
-            debug!("A reply is already being drafted or regenerated");
-            return;
-        }
-        let generation = DRAFT_CANCEL_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-        let app_clone = app.clone();
-
-        // Erase the previously typed reply from the chat box
-        if let Err(e) = crate::clipboard::erase_last_typed(app) {
-            warn!("Failed to backspace previous reply: {e}");
-        }
-
-        set_tray_state(app, TrayIconState::Transcribing);
-        utils::show_drafting_overlay(app);
-        play_feedback_sound(app, SoundType::Start);
-        shortcut::register_cancel_shortcut(app);
-
-        std::thread::spawn(move || {
-            let last_draft = crate::reply::get_last_draft();
-            let avoid = last_draft.as_ref().map(|d| d.reply.as_str());
-            let hint = last_draft.as_ref().and_then(|d| d.hint.as_deref());
-            let jpeg_bytes = last_draft.as_ref().and_then(|d| d.jpeg_bytes.as_ref());
-
-            let result = match jpeg_bytes {
-                Some(bytes) => crate::reply::draft_reply_from_jpeg_with_options(bytes, hint, avoid),
-                None => crate::reply::draft_reply_from_screen_with_options(hint, avoid),
-            };
-
-            shortcut::unregister_cancel_shortcut(&app_clone);
-
-            if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) != generation {
-                debug!("Regenerate reply operation cancelled during drafting");
-                utils::hide_recording_overlay(&app_clone);
-                set_tray_state(&app_clone, TrayIconState::Idle);
-                DRAFTING.store(false, Ordering::SeqCst);
-                return;
-            }
-
-            match result {
-                Ok(reply) => {
-                    play_feedback_sound(&app_clone, SoundType::Stop);
-                    if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) != generation {
-                        debug!("Regenerate reply operation cancelled before typing");
-                        utils::hide_recording_overlay(&app_clone);
-                        set_tray_state(&app_clone, TrayIconState::Idle);
-                        DRAFTING.store(false, Ordering::SeqCst);
-                        return;
-                    }
-
-                    if let Some(coords) = crate::reply::get_last_input_box() {
-                        crate::input::focus_input_box(&app_clone, coords);
-                    }
-                    if let Err(e) = crate::clipboard::paste(reply, app_clone.clone()) {
-                        error!("Failed to type regenerated reply: {e}");
-                        let _ = app_clone.emit("draft-reply-error", e.to_string());
-                    }
-                    if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
-                        restore_overlay_or_hide(&app_clone);
-                        set_tray_state(&app_clone, TrayIconState::Idle);
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to regenerate reply: {e}");
-                    utils::hide_recording_overlay(&app_clone);
-                    set_tray_state(&app_clone, TrayIconState::Idle);
-                    let _ = app_clone.emit("draft-reply-error", e);
-                }
-            }
-            DRAFTING.store(false, Ordering::SeqCst);
-        });
-    }
-
-    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
 }
 
 // Watch Chat Action
@@ -854,10 +967,6 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         Arc::new(DraftReplyWithHintAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
-        "regenerate_reply".to_string(),
-        Arc::new(RegenerateReplyAction) as Arc<dyn ShortcutAction>,
-    );
-    map.insert(
         "watch_chat".to_string(),
         Arc::new(WatchChatAction) as Arc<dyn ShortcutAction>,
     );
@@ -885,14 +994,18 @@ pub fn trigger_draft_reply_hint_start(app: &AppHandle) {
 }
 
 pub fn trigger_draft_reply_hint_stop(app: &AppHandle) {
+    HINT_LOCKED_TAP.store(false, Ordering::SeqCst);
     if let Some(action) = ACTION_MAP.get("draft_reply_hint") {
         action.stop(app, "draft_reply_hint", "");
     }
 }
 
-pub fn trigger_regenerate_reply(app: &AppHandle) {
-    if let Some(action) = ACTION_MAP.get("regenerate_reply") {
-        action.start(app, "regenerate_reply", "");
+pub fn trigger_draft_reply_hint_toggle(app: &AppHandle) {
+    let rm = app.state::<Arc<AudioRecordingManager>>();
+    if rm.is_recording() {
+        trigger_draft_reply_hint_stop(app);
+    } else {
+        trigger_draft_reply_hint_start(app);
     }
 }
 

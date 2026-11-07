@@ -132,7 +132,7 @@ pub fn recording_error_type(error: &anyhow::Error) -> &'static str {
 
 /* ──────────────────────────────────────────────────────────────── */
 
-/// A fresh detector for `backend`, without Handy's smoothing: what a
+/// A fresh detector for `backend`, without Chatelle's smoothing: what a
 /// recording's VAD wraps, and what scores audio for long-form chunking, so
 /// every path uses the selected backend.
 pub fn create_detector(
@@ -368,10 +368,17 @@ impl AudioRecordingManager {
     /// clamshell probe (an `ioreg` subprocess, ~10-20ms) when a clamshell
     /// microphone is actually configured.
     fn desired_microphone(&self, settings: &AppSettings) -> DesiredMicrophone {
-        let desired = desired_from(settings.selected_microphone.as_deref());
-        // The phone wins over a clamshell microphone.
+        let mut desired = desired_from(settings.selected_microphone.as_deref());
+        // The phone wins over a clamshell microphone while it is connected.
+        // When it is not (its page is closed or in the background), this
+        // computer's microphone records instead, so a shortcut press never
+        // fails for want of the phone.
         if matches!(desired, DesiredMicrophone::Phone) {
-            return desired;
+            if self.phone_connected() {
+                return desired;
+            }
+            debug!("device resolve: the phone is not connected; using this computer's microphone");
+            desired = DesiredMicrophone::Default;
         }
         if let Some(clamshell_microphone) = &settings.clamshell_microphone {
             let clamshell_started = Instant::now();
@@ -386,6 +393,25 @@ impl AudioRecordingManager {
             }
         }
         desired
+    }
+
+    /// Whether the phone microphone is connected (its page is open and
+    /// sending audio).
+    fn phone_connected(&self) -> bool {
+        self.app_handle
+            .try_state::<Arc<PhoneMicrophone>>()
+            .is_some_and(|phone| phone.capture().is_connected())
+    }
+
+    /// Whether the open microphone is the wrong one for the next recording:
+    /// the phone while it is not connected, or this computer's microphone
+    /// while the selected phone is connected.
+    fn open_source_is_stale(&self, microphone: &OpenMicrophone, settings: &AppSettings) -> bool {
+        let phone_selected = settings.selected_microphone.as_deref() == Some(PHONE_MICROPHONE);
+        match microphone.source {
+            MicSource::Phone(_) => !phone_selected || !self.phone_connected(),
+            MicSource::Device(_) => phone_selected && self.phone_connected(),
+        }
     }
 
     pub fn invalidate_device_cache(&self) {
@@ -592,12 +618,13 @@ impl AudioRecordingManager {
             // still running. If the recorder has since failed (mic unplugged,
             // stalled, permission revoked), rebuild it before the next
             // recording instead of handing the caller a failed recorder.
+            let settings = get_settings(&self.app_handle);
             let needs_reopen = self
                 .recorder
                 .lock()
                 .unwrap()
                 .as_ref()
-                .is_none_or(OpenMicrophone::needs_reopen);
+                .is_none_or(|m| m.needs_reopen() || self.open_source_is_stale(m, &settings));
 
             if !needs_reopen {
                 // trace, not debug: with the aliveness check in
@@ -607,7 +634,7 @@ impl AudioRecordingManager {
                 return Ok(());
             }
 
-            warn!("Microphone stream failed; reopening");
+            warn!("Microphone stream failed or the phone came or went; reopening");
 
             // Torn down inline rather than via stop_microphone_stream(), which
             // takes the `is_open` lock we are already holding.
