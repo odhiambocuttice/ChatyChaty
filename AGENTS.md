@@ -205,3 +205,13 @@ See the [Troubleshooting](README.md#troubleshooting) section in README.md.
 ## Commits
 
 Use conventional commit prefixes (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`). Focus the message on _why_, not _what_.
+
+## Chat Screen Layout & Reply Drafting Rules
+
+When analyzing chat screenshots or drafting AI replies:
+
+- **Three-Column Layout:**
+  - **Left panel:** The **client** (customer). Note that the top bold header is their username/handle (e.g., `Goodman`), while their actual first name may appear below or under `PERSONAL INFO -> name` (e.g., `Ernie`).
+  - **Middle column:** The **chats** (white left-aligned bubbles = client; purple/colored right-aligned bubbles = model, and bottom input box = unsent draft).
+  - **Right panel (marked `"you are"`):** The **model** (persona the user is playing).
+- **Reading the Model's Name:** Always read the model's name from the **right** panel (under `"you are"`). The bold pink/colored title at the top of the right panel is the profile handle/username (e.g., `VividKindness`), while the **model's actual first name** is on the line immediately below the handle, before the comma and age (e.g., `Kiana` in `Kiana, 57`). Only give the model's first name when asked for the model name—never confuse the username/handle or age with the model's name.

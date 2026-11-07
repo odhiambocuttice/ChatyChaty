@@ -243,11 +243,11 @@ function App() {
       ) : (
         <div
           dir={direction}
-          className="h-screen flex select-none cursor-default"
+          className="h-screen flex bg-sidebar select-none cursor-default"
         >
           <nav
             aria-label={t("settings.tabs.label")}
-            className="w-56 shrink-0 h-full overflow-y-auto border-e border-line bg-sidebar px-3 pt-5 pb-4"
+            className="w-56 shrink-0 h-full overflow-y-auto px-3 pt-5 pb-4"
           >
             <div className="flex items-center gap-2.5 px-2">
               <img src={appIcon} alt="" className="size-10 drop-shadow-sm" />
@@ -292,7 +292,7 @@ function App() {
               })}
             </div>
           </nav>
-          <main className="flex-1 min-w-0 h-full overflow-y-auto">
+          <main className="flex-1 min-w-0 my-2 me-2 overflow-y-auto rounded-panel border border-line bg-background">
             <div className="max-w-[640px] w-full mx-auto px-6 pt-6 pb-12">
               <h1 className="text-xl font-semibold tracking-[-0.02em]">
                 {t(`settings.tabs.${tab}`)}

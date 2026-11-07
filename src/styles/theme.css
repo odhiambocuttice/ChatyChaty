@@ -10,12 +10,26 @@
      light/dark pair; the active tokens below and the `data-theme` overrides
      in App.css reference these, so a hex value lives in exactly one place. */
   --light-color-text: #0f0f0f;
-  --light-color-background: #fbfbfb;
+  /* Light greys match macOS System Settings: white page, #f2f2f2 sidebar,
+     #f7f7f7 grouped rows. */
+  --light-color-background: #ffffff;
+  --light-color-sidebar: #f2f2f2;
+  --light-color-panel: #f7f7f7;
   --light-color-logo-primary: #d97757;
   --light-color-logo-stroke: #382731;
 
   --dark-color-text: #fbfbfb;
   --dark-color-background: #2c2b29;
+  --dark-color-sidebar: color-mix(
+    in srgb,
+    var(--dark-color-text) 4%,
+    var(--dark-color-background)
+  );
+  --dark-color-panel: color-mix(
+    in srgb,
+    #808080 10%,
+    var(--dark-color-background)
+  );
   --dark-color-logo-primary: #d97757;
 
   /* Status colors. Each has a -wash tint below. */
@@ -131,6 +145,8 @@
      below, or is forced by `data-theme` (see the overrides below). */
   --color-text: var(--light-color-text);
   --color-background: var(--light-color-background);
+  --color-sidebar: var(--light-color-sidebar);
+  --color-panel: var(--light-color-panel);
   --color-logo-primary: var(--light-color-logo-primary);
   --color-warning: var(--light-color-warning);
   --color-error: var(--light-color-error);
@@ -169,6 +185,8 @@
   :root {
     --color-text: var(--dark-color-text);
     --color-background: var(--dark-color-background);
+    --color-sidebar: var(--dark-color-sidebar);
+    --color-panel: var(--dark-color-panel);
     --color-logo-primary: var(--dark-color-logo-primary);
     --color-warning: var(--dark-color-warning);
     --color-error: var(--dark-color-error);
@@ -202,6 +220,8 @@
 :root[data-theme="light"] {
   --color-text: var(--light-color-text);
   --color-background: var(--light-color-background);
+  --color-sidebar: var(--light-color-sidebar);
+  --color-panel: var(--light-color-panel);
   --color-logo-primary: var(--light-color-logo-primary);
   --color-warning: var(--light-color-warning);
   --color-error: var(--light-color-error);
@@ -224,6 +244,8 @@
 :root[data-theme="dark"] {
   --color-text: var(--dark-color-text);
   --color-background: var(--dark-color-background);
+  --color-sidebar: var(--dark-color-sidebar);
+  --color-panel: var(--dark-color-panel);
   --color-logo-primary: var(--dark-color-logo-primary);
   --color-warning: var(--dark-color-warning);
   --color-error: var(--dark-color-error);
