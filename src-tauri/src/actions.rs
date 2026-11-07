@@ -625,12 +625,17 @@ pub fn choose_draft(app: &AppHandle, index: usize) -> Result<(), String> {
     // Typing sleeps between keys: never on the command's thread.
     std::thread::spawn(move || {
         crate::reply::accept_draft(&reply);
-        if let Some(coords) = crate::reply::get_last_input_box() {
-            crate::input::focus_input_box(&app, coords);
-        }
-        if let Err(e) = crate::clipboard::paste(reply, app.clone()) {
-            error!("Failed to type the chosen draft: {e}");
-            let _ = app.emit("draft-reply-error", e.to_string());
+        match crate::input::focus_reply_box(&app, crate::reply::get_last_input_box()) {
+            Err(e) => {
+                error!("Not typing the chosen draft: {e}");
+                let _ = app.emit("draft-reply-error", e);
+            }
+            Ok(()) => {
+                if let Err(e) = crate::clipboard::paste(reply, app.clone()) {
+                    error!("Failed to type the chosen draft: {e}");
+                    let _ = app.emit("draft-reply-error", e.to_string());
+                }
+            }
         }
         restore_overlay_or_hide(&app);
     });
@@ -684,12 +689,20 @@ impl ShortcutAction for DraftReplyAction {
                     if drafts.len() > 1 {
                         offer_choices(&app_clone, drafts, jpeg, None);
                     } else if let Some(reply) = drafts.into_iter().next() {
-                        if let Some(coords) = crate::reply::get_last_input_box() {
-                            crate::input::focus_input_box(&app_clone, coords);
-                        }
-                        if let Err(e) = crate::clipboard::paste(reply, app_clone.clone()) {
-                            error!("Failed to type the drafted reply: {e}");
-                            let _ = app_clone.emit("draft-reply-error", e.to_string());
+                        match crate::input::focus_reply_box(
+                            &app_clone,
+                            crate::reply::get_last_input_box(),
+                        ) {
+                            Err(e) => {
+                                error!("Not typing the drafted reply: {e}");
+                                let _ = app_clone.emit("draft-reply-error", e);
+                            }
+                            Ok(()) => {
+                                if let Err(e) = crate::clipboard::paste(reply, app_clone.clone()) {
+                                    error!("Failed to type the drafted reply: {e}");
+                                    let _ = app_clone.emit("draft-reply-error", e.to_string());
+                                }
+                            }
                         }
                         if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {
                             restore_overlay_or_hide(&app_clone);
@@ -903,12 +916,18 @@ impl ShortcutAction for DraftReplyWithHintAction {
                 }
                 Ok((_, drafts)) => {
                     if let Some(reply) = drafts.into_iter().next() {
-                        if let Some(coords) = crate::reply::get_last_input_box() {
-                            crate::input::focus_input_box(&ah, coords);
-                        }
-                        if let Err(e) = crate::clipboard::paste(reply, ah.clone()) {
-                            error!("Failed to type hint-drafted reply: {e}");
-                            let _ = ah.emit("draft-reply-error", e.to_string());
+                        match crate::input::focus_reply_box(&ah, crate::reply::get_last_input_box())
+                        {
+                            Err(e) => {
+                                error!("Not typing the hint-drafted reply: {e}");
+                                let _ = ah.emit("draft-reply-error", e);
+                            }
+                            Ok(()) => {
+                                if let Err(e) = crate::clipboard::paste(reply, ah.clone()) {
+                                    error!("Failed to type hint-drafted reply: {e}");
+                                    let _ = ah.emit("draft-reply-error", e.to_string());
+                                }
+                            }
                         }
                     }
                     if DRAFT_CANCEL_GENERATION.load(Ordering::SeqCst) == generation {

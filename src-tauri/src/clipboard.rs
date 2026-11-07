@@ -45,14 +45,14 @@ pub(crate) fn with_enigo<T: Send + 'static>(
 
 /// The process ID of the app in front. Call on the main thread.
 #[cfg(target_os = "macos")]
-fn front_app_pid() -> Option<i32> {
+pub(crate) fn front_app_pid() -> Option<i32> {
     let app = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication()?;
     Some(app.processIdentifier())
 }
 
 /// Not checked on other platforms, so typing never stops for this reason.
 #[cfg(not(target_os = "macos"))]
-fn front_app_pid() -> Option<i32> {
+pub(crate) fn front_app_pid() -> Option<i32> {
     None
 }
 
