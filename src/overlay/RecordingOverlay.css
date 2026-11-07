@@ -23,9 +23,9 @@
      the card's max footprint (--ov-work-w for compact, --ov-open-w for Live),
      since the card is anchored flush to the screen edge in CSS. Keep overlay.rs
      in sync when these change. */
-  --ov-rest-w: 172px; /* resting compact pill (minimal, recording) -- roomy enough
+  --ov-rest-w: 204px; /* resting compact pill (minimal, recording) -- roomy enough
                          for the English working label before the grow starts */
-  --ov-pill-w: 184px; /* base width / Live pill before it opens or collapses */
+  --ov-pill-w: 216px; /* base width / Live pill before it opens or collapses */
   --ov-work-w: 216px; /* working pill (transcribing / polishing) -- wide enough to
                          center longer labels; shared by Live (collapsed) + minimal */
   --ov-open-w: 392px; /* Live panel, expanded */
@@ -756,6 +756,21 @@
 }
 .sx:active {
   transform: scale(0.95);
+}
+/* The Done button: stops and types. Filled with the accent so it reads as the
+   primary action next to the plain × that discards. */
+.sx.sdone {
+  background: var(--s-accent);
+  color: #fff;
+}
+.sx.sdone svg {
+  width: 10px;
+  height: 10px;
+}
+.sx.sdone:hover {
+  background: var(--s-accent);
+  color: #fff;
+  filter: brightness(1.1);
 }
 
 /* working state (transcribing / polishing) — spinner + label */

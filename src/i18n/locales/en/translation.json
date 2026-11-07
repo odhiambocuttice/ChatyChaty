@@ -260,6 +260,7 @@
     "drafting": "Writing reply...",
     "hinting": "Listening...",
     "done": "Done",
+    "finish": "Stop and type what you said",
     "choose": {
       "title": "Pick a reply",
       "regenerate": "Show three new replies",

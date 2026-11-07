@@ -336,8 +336,31 @@ const RecordingOverlay: React.FC = () => {
     </button>
   );
 
-  // dot (left) | waveform (center) | timer + cancel (right) — same structure for
-  // pill & panel, so the Live morph is a pure width change.
+  // Stops the recording and types what was said: the same as pressing the
+  // shortcut again, for operators who reach for the mouse. The × beside it
+  // discards instead, so the two never look alike.
+  const doneBtn = (
+    <button
+      className="sx sdone"
+      aria-label={t("overlay.finish", "Stop and type what you said")}
+      title={t("overlay.finish", "Stop and type what you said")}
+      onClick={() => commands.triggerTranscribeToggle()}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M3.5 8.5 L6.5 11.5 L12.5 5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+
+  // dot (left) | waveform (center) | timer + done + cancel (right) — same
+  // structure for pill & panel, so the Live morph is a pure width change.
   const listeningRow = (showTimer: boolean, showCancel: boolean) => (
     <div className="sbase">
       <div className="sbase-l">
@@ -346,6 +369,7 @@ const RecordingOverlay: React.FC = () => {
       {waveform}
       <div className="sbase-r">
         {showTimer && <span className="stimer">{fmtTime(elapsed)}</span>}
+        {showCancel && doneBtn}
         {showCancel && cancelBtn}
       </div>
     </div>
