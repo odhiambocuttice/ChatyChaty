@@ -37,7 +37,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
 
   if (icon && title) {
     return (
-      <div className="bg-wash rounded-panel overflow-visible">
+      <div className="bg-panel rounded-panel overflow-visible">
         <button
           type="button"
           aria-expanded={open}
@@ -81,7 +81,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
           )}
         </div>
       )}
-      <div className="bg-wash rounded-panel px-5 overflow-visible">
+      <div className="bg-panel rounded-panel px-5 overflow-visible">
         <div className="divide-y divide-line">{children}</div>
       </div>
     </div>

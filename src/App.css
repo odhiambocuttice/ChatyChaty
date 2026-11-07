@@ -9,6 +9,8 @@
   --color-text: var(--color-text);
   --color-background: var(--color-background);
   --color-background-ui: var(--color-background-ui);
+  --color-sidebar: var(--color-sidebar);
+  --color-panel: var(--color-panel);
   --color-logo-primary: var(--color-logo-primary);
   --color-warning: var(--color-warning);
   --color-error: var(--color-error);
@@ -269,13 +271,4 @@
   fill: var(--color-wordmark-stroke);
   stroke: var(--color-wordmark-stroke);
   stroke-width: 1;
-}
-
-/* Settings sidebar: a shade darker than the page, like macOS System Settings. */
-.bg-sidebar {
-  background-color: color-mix(
-    in srgb,
-    var(--color-text) 4%,
-    var(--color-background)
-  );
 }
