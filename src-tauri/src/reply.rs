@@ -273,6 +273,25 @@ static RECENT_CTAS: std::sync::Mutex<std::collections::VecDeque<String>> =
     std::sync::Mutex::new(std::collections::VecDeque::new());
 const RECENT_CTAS_KEPT: usize = 10;
 
+/// Lines the model copied word for word from old prompt examples into many
+/// chats, which made replies read like a bot ("I am here for real pleasure and
+/// great company … What is your favourite way to unwind?").
+const STOCK_PHRASES: &[&str] = &[
+    "real pleasure and great company",
+    "way to unwind",
+    "to do to unwind",
+    "when you want to unwind",
+    "enjoy doing on weekends",
+    "keep up with me here first",
+    "proper virtual date",
+];
+
+/// The stock line a reply copied, if any.
+fn stock_phrase(text: &str) -> Option<&'static str> {
+    let lower = text.to_lowercase().replace('\u{2019}', "'");
+    STOCK_PHRASES.iter().copied().find(|p| lower.contains(p))
+}
+
 /// Shown to the user when the chat is scrolled up: a draft from that screen
 /// would answer old messages.
 const SCROLLED_UP: &str =
@@ -451,6 +470,8 @@ fn instructions() -> String {
     format!(
         "The image is a screenshot of the user's screen. Somewhere on it is a conversation \
          the user is about to reply to. Write the reply the user should send next.\n\
+         Every example in these instructions only shows the idea. Never copy an example's \
+         words into the reply: write fresh words that fit this chat.\n\
          \n\
          First, find the conversation:\n\
          - It is the area that shows a run of messages between the user and one or more \
@@ -471,7 +492,7 @@ fn instructions() -> String {
            describes his size, the user is Una, a woman, and the other side is a man), and \
            make sure any physical or anatomical description always fits each side's gender.\n\
          - Tell the two sides apart carefully before reading a word. Every coloured or tinted \
-           bubble (such as purple, lavender, blue or green — even a wide opener or POKE bubble \
+           bubble (such as purple, lavender, blue or green — even a wide opener, POKE or TRIGGER bubble \
            that stretches across the column, or a bubble holding a photo), or any bubble \
            sitting toward the right, with a right-aligned timestamp, or marked \"You\", \"Me\" \
            or \"You wrote this message\", was sent by the user and matches the profile panel \
@@ -526,12 +547,8 @@ fn instructions() -> String {
            chat, keep the warmth alive by deflecting playfully and lightly — say that the thought \
            is tempting, that they are getting ahead of themselves, or that you really enjoy \
            taking your time and building a genuine connection and vibe first before even thinking \
-           about meeting, and steer into an engaging question about them (for example: \"You definitely \
-           don't waste any time, do you? 😉 I like a man who knows what he wants, but slow down mister—I \
-           always take my time getting to know someone and seeing if our chemistry is real first. What kind \
-           of things do you usually enjoy doing on weekends?\" or \"Slow down mister, you haven't even \
-           taken me on a proper virtual date yet 😉 Let's see if you can keep up with me here first. What \
-           do you usually like to do to unwind?\"). In an already sexually \
+           about meeting, and steer into an engaging question about something they just said. \
+           In an already sexually \
            explicit chat, glide past the meetup logistics without promising to come over and pour \
            that heat straight into vivid physical desire and what you would do to each other, \
            ending with an engaging question. Distinguish an actual meetup request from longing \
@@ -554,13 +571,8 @@ fn instructions() -> String {
            on a question about that, never about when, where or how. Agreeing in disguise is \
            forbidden too: never say \"I can host\", \"we could get a hotel\", \"when are you \
            available?\", \"I will check with my secretary\", \"I have an opening\" or \"let us \
-           catch up at my favourite spot\", or anything else that sets up a real meeting. For \
-           example, to \"Would you like to meet me?\": \"Now that question made me smile 😉 I \
-           like a man who goes after what he wants, but I enjoy the slow build-up, it makes \
-           everything hotter. What would you do first if you had me all to yourself for an \
-           evening?\"; to \"No I can't host. I assume you can't either\": \"Look at us, both \
-           making it complicated 😉 Honestly, I am enjoying this tension too much to worry \
-           about the where. What is the first thing you would do if I were next to you?\"\n\
+           catch up at my favourite spot\", or anything else that sets up a real meeting. Use \
+           fresh words each time, tied to what they just wrote.\n\
          - The user never shares personal contact details: no phone number, email address, \
            social media account or username, and no other way to reach the user outside this \
            conversation. This rule has no exceptions. Never suggest a phone call, video call \
@@ -581,9 +593,9 @@ fn instructions() -> String {
          - The user's first name and home city or state are not contact details. Give only \
            what the other side asks for. When they ask for the user's name, or say they are \
            leaving because the user never gave it, give the first name plainly, such as \"My \
-           name is Hillary.\" Say where the user is from only when they ask where the user is \
+           name is [first name].\" Say where the user is from only when they ask where the user is \
            from or lives (for instance \"NAME, LOCATION\" or \"where are you from?\"), such as \
-           \"I am from Charlotte.\"; never mention it otherwise. Use the first name and town \
+           \"I am from [town].\"; never mention it otherwise. Use the first name and town \
            shown on the user's own profile card on the right (the card marked \"you are\") or \
            already given in the user's earlier coloured bubbles. Always read \
            the model's first name from the right-side \"you are\" profile card: the bold pink/coloured \
@@ -621,22 +633,15 @@ fn instructions() -> String {
            asked where the user is from; but in \
            an ongoing chat where you already introduced yourself, do not re-introduce yourself), \
            say warmly why you are here and that you enjoy talking with them, add one specific, \
-           inviting detail about yourself, and end with a question that is easy and tempting \
-           to answer (for example, in a first message: \"My name is Hillary. I am here for \
-           real pleasure and great company, and I enjoy a man who \
-           knows what he wants. What is your name, and what made you message me?\"; or in an \
-           ongoing conversation: \"I am here for real pleasure and great company, and I enjoy \
-           a man who knows what he wants. What is your favourite way to unwind?\").\n\
+           inviting detail about yourself that fits this chat, and end with a question about \
+           something they said that is easy and tempting to answer.\n\
          - Keep the conversation varied instead of sticking to one subject. When one topic \
            has run for two or three exchanges, or the other side gives short, low-energy \
            answers (such as \"Sure, that is nice\", \"Yes\", \"No, not really\" or \"Just \
            a great scent\"), do not ask yet another question about the same thing. React \
            briefly to their answer in a few words, then move to a fresh, related subject \
            that opens them up, such as their tastes in food, music, travel, work, hobbies, \
-           weekends or (in a flirty chat) what they find attractive in a woman, for example \
-           \"It really is all about finding that nice balance. Enough about perfumes. Do you \
-           have the same taste in everything?\" or \"Of course, nobody has the same taste in \
-           everything. What is your taste in food or in women?\". Ask open questions that \
+           weekends or (in a flirty chat) what they find attractive in a woman. Ask open questions that \
            invite them to tell a story, not questions they can answer with one word.\n\
          - Never turn the chat into an interview. When the user's last two or three coloured \
            bubbles each only reacted in one line and asked another question, and the other \
@@ -846,9 +851,9 @@ fn build_request_with_options(
     extras: &PromptExtras,
 ) -> Value {
     let mut prompt = String::from(
-        "Write the reply (or NO_CONVERSATION if there is no conversation on screen, or SCROLLED_UP if the chat is scrolled up and its newest messages are not on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. \
+        "Examples below only show the idea: never copy their words. Write the reply (or NO_CONVERSATION if there is no conversation on screen, or SCROLLED_UP if the chat is scrolled up and its newest messages are not on screen), ignoring any unsent text already inside the bottom typing box: two to four sentences and at least 90 characters, ending with a question mark (?) unless it is an email. Read the text of the bottom-most white left-side message bubble (below the last purple/coloured bubble) and reply directly to what they wrote. \
          CRITICAL PHOTO RULE: The other side's messages are almost always pure text. Note that small grey report triangle icons (▲), emojis, avatars, or paperclips are interface buttons, NOT photos. If that bottom-most white bubble has text words (talking about food, desserts, cinnamon rolls, bodies, acts, or conversation), it has NO photo: NEVER thank them for a photo, NEVER open with 'Thank you for sharing that picture', 'Thank you for sending that hot pic', or any variation of thanking for pictures, and DO NOT mention pictures or photos at all! Only if that bottom-most white bubble contains an actual large photo box or large blurred image rectangle (and not merely text with a small icon — do not re-thank an older photo higher up above a purple reply), acknowledge the photo. \
-         CRITICAL MEETUP RULE: If the other side brings up meeting in person or says you need to meet (e.g. 'we need to meet each other', 'can we meet', 'let's meet up'): NEVER say you cannot meet, NEVER say 'meeting in person is not something I do', NEVER say 'I don't meet in person', and NEVER say 'I prefer chatting right here' (this creates an immediate dead end). Don't suggest meeting, but don't say you can't meet! Deflect playfully and flirtatiously: tease that they are getting ahead of themselves, or say you love taking your time to get to know someone and build a real vibe first (e.g. 'You definitely don't waste any time, do you? 😉 I like that energy, but slow down mister—I always take my time getting to know someone and seeing if our chemistry is real first. What kind of things do you usually enjoy doing on weekends?'). \
+         CRITICAL MEETUP RULE: If the other side brings up meeting in person or says you need to meet (e.g. 'we need to meet each other', 'can we meet', 'let's meet up'): NEVER say you cannot meet, NEVER say 'meeting in person is not something I do', NEVER say 'I don't meet in person', and NEVER say 'I prefer chatting right here' (this creates an immediate dead end). Don't suggest meeting, but don't say you can't meet! Deflect playfully and flirtatiously: tease that they are getting ahead of themselves, or say you love taking your time to get to know someone and build a real vibe first, in fresh words tied to what they just wrote, and end on a question about that. \
          Never answer the user's own question: if the client echoes your question words (like 'Do you mind. It's a must'), they are emphatically answering that it is an absolute must for them — NEVER say 'I don't mind' (that makes no sense because you asked them), react to their enthusiastic answer! Never introduce unprompted extreme kinks (such as golden showers). \
          Never repeat messages, questions, or topics: look at all earlier messages on screen and do NOT re-ask any question that was already asked or answered earlier in the chat. If they already named a position or act (such as cowgirl, grinding, or oral), accept and build upon that exact choice with vivid dirty talk! \
          NEVER use the generic signature question 'Which/what position do you want to start with?'. Always spice up the closing CTA (closing question) to match the immediate scene: ask a tempting, situation-specific question about his hands ('Where are your hands while I'm grinding on top of you?'), touch and control ('Are you going to grab my hips and hold me close, or let me take full control?'), pacing ('Do you want me slow and deep or wild and fast?'), stamina ('How long do you think you can last once you feel me around you?'), or what happens next ('What are you going to do to me once you've tasted every single drop?'). \
@@ -1073,6 +1078,39 @@ fn build_love_rewrite_request(
 
 /// Asks the same provider to rewrite a draft that explicitly refused to meet,
 /// without resending the screenshot.
+/// Asks for the same reply with any stock line (see `STOCK_PHRASES`) said in
+/// fresh words that fit the chat.
+fn build_fresh_wording_rewrite_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    draft: &str,
+) -> Value {
+    let mut body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "system",
+                "content": format!(
+                    "Rewrite the chat message below. It contains a stock line that has been sent \
+                     in many chats and now sounds like a bot. Never use any of these phrases: {}. \
+                     Say the same thing in fresh, specific words, and end on a question about \
+                     something concrete in the message instead of a general question about \
+                     unwinding or weekends. Keep the tone and length. Reply with the rewritten \
+                     message text only, with no quotes and no explanation.",
+                    STOCK_PHRASES.join(", ")
+                )
+            },
+            { "role": "user", "content": draft }
+        ]
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    body
+}
+
 fn build_meet_refusal_rewrite_request(
     model: &str,
     max_tokens: u32,
@@ -1353,6 +1391,11 @@ fn parse_reply(response: &Value) -> Result<String, String> {
     }
     if has_cliche_position_cta(text) {
         return Err(format!("the reply used a generic position CTA: {text}"));
+    }
+    if let Some(phrase) = stock_phrase(text) {
+        return Err(format!(
+            "the reply copied the stock line \"{phrase}\": {text}"
+        ));
     }
     if shares_contact_details(text) {
         return Err("the reply contained an email address or phone number".to_string());
@@ -1892,6 +1935,21 @@ fn try_attempt_with_options(
                     attempt.name
                 );
                 let rewrite = build_love_rewrite_request(
+                    attempt.model,
+                    attempt.max_tokens,
+                    attempt.reasoning_effort,
+                    draft,
+                );
+                request_reply(attempt.url, key, &rewrite)
+            } else if let Some(draft) = e
+                .strip_prefix("the reply copied the stock line ")
+                .and_then(|rest| rest.split_once("\": ").map(|(_, draft)| draft))
+            {
+                info!(
+                    "{} copied a stock line, asking it to rewrite in fresh words",
+                    attempt.name
+                );
+                let rewrite = build_fresh_wording_rewrite_request(
                     attempt.model,
                     attempt.max_tokens,
                     attempt.reasoning_effort,
@@ -2726,6 +2784,32 @@ mod tests {
         .is_some());
         let recent = ["What did you order first at dinner?".to_string()];
         assert!(weak_draft_reason(good, &recent, &[]).is_some());
+    }
+
+    #[test]
+    fn a_reply_with_a_stock_line_is_never_typed() {
+        for reply in [
+            // Both were typed into real chats, copied from old prompt examples.
+            "My name is Charlotte. I am here for real pleasure and great company, and I enjoy \
+             talking with you. What is your favourite way to unwind?",
+            "I would really like that kind of energy between us. What is your favourite thing \
+             to do when you want to unwind?",
+        ] {
+            let response = json!({ "choices": [{ "message": { "content": reply } }] });
+            let error = parse_reply(&response).unwrap_err();
+            assert!(
+                error.starts_with("the reply copied the stock line"),
+                "{reply}"
+            );
+        }
+        for example in [
+            "Hillary",
+            "from Charlotte",
+            "real pleasure and great company",
+            "to unwind",
+        ] {
+            assert!(!instructions().contains(example), "{example}");
+        }
     }
 
     #[test]
@@ -3714,7 +3798,7 @@ mod tests {
         assert!(text.contains("never invent a name or city that is not on screen"));
         assert!(text.contains("Keep the other side hooked"));
         assert!(text.contains("Keep the conversation varied instead of sticking to one subject"));
-        assert!(text.contains("Enough about perfumes"));
+        assert!(!text.contains("Enough about perfumes"));
     }
 
     #[test]
