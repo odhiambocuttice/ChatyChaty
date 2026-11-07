@@ -56,8 +56,74 @@ fn front_app_pid() -> Option<i32> {
     None
 }
 
+/// Windows: an input method in Japanese (or another composition) mode turns the
+/// typed Latin keys into kana ("Wouldblingど" was typed into a chat), so the
+/// front window's IME is switched off for the typing and back on afterwards.
+#[cfg(target_os = "windows")]
+struct ImeGuard {
+    ime_window: windows::Win32::Foundation::HWND,
+}
+
+#[cfg(target_os = "windows")]
+impl ImeGuard {
+    const IMC_GETOPENSTATUS: usize = 0x0005;
+    const IMC_SETOPENSTATUS: usize = 0x0006;
+
+    /// Switches the front window's IME off when it is on. None when there is
+    /// no IME window or it is already off: nothing to put back.
+    fn close_for_front_window() -> Option<Self> {
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
+        use windows::Win32::UI::Input::Ime::ImmGetDefaultIMEWnd;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetForegroundWindow, SendMessageW, WM_IME_CONTROL,
+        };
+        unsafe {
+            let ime_window = ImmGetDefaultIMEWnd(GetForegroundWindow());
+            if ime_window.0.is_null() {
+                return None;
+            }
+            let open = SendMessageW(
+                ime_window,
+                WM_IME_CONTROL,
+                Some(WPARAM(Self::IMC_GETOPENSTATUS)),
+                Some(LPARAM(0)),
+            )
+            .0 != 0;
+            if !open {
+                return None;
+            }
+            SendMessageW(
+                ime_window,
+                WM_IME_CONTROL,
+                Some(WPARAM(Self::IMC_SETOPENSTATUS)),
+                Some(LPARAM(0)),
+            );
+            log::info!("Switched the front window's input method off while typing");
+            Some(Self { ime_window })
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for ImeGuard {
+    fn drop(&mut self) {
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{SendMessageW, WM_IME_CONTROL};
+        unsafe {
+            SendMessageW(
+                self.ime_window,
+                WM_IME_CONTROL,
+                Some(WPARAM(Self::IMC_SETOPENSTATUS)),
+                Some(LPARAM(1)),
+            );
+        }
+    }
+}
+
 /// Types text directly by simulating individual key presses.
 fn paste_direct(text: &str, app_handle: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let _ime = ImeGuard::close_for_front_window();
     // Keys go to whatever is in front. A live test typed the second half of a
     // reply into another window after the user clicked away, so typing stops
     // as soon as a different app comes to the front.

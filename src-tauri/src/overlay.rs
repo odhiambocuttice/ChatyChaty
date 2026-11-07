@@ -64,9 +64,10 @@ const OVERLAY_DOCK_VERTICAL_HEIGHT: f64 = 238.0;
 const OVERLAY_DOCK_ICONS_WIDTH: f64 = 70.0;
 const OVERLAY_DOCK_ICONS_HEIGHT: f64 = 298.0;
 
-// The three drafts to pick from, stacked as cards.
+// The three drafts to pick from, stacked as cards, each shown in full (the
+// list scrolls if three long drafts still do not fit).
 const OVERLAY_CHOOSING_WIDTH: f64 = 440.0;
-const OVERLAY_CHOOSING_HEIGHT: f64 = 370.0;
+const OVERLAY_CHOOSING_HEIGHT: f64 = 500.0;
 
 /// Whether the overlay is showing the dock, so a position change can resize
 /// it between the row and the column layout.

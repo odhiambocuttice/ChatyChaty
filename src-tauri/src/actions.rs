@@ -541,17 +541,29 @@ pub fn regenerate_choices(app: &AppHandle) -> Result<(), String> {
     rewrite_choices(app, None)
 }
 
-/// Rewrites the drafts on offer with a tone button's change ("shorter",
-/// "longer", "funnier", "serious"), keeping what they say.
+/// Rewrites the drafts on offer with a picker button's change: a tone
+/// ("spicier", "sweeter", "playful", "clean") keeps what they say and changes
+/// how; "topic" writes fresh drafts on a new subject instead.
 pub fn retone_choices(app: &AppHandle, tone: &str) -> Result<(), String> {
+    if tone == "topic" {
+        return rewrite_choices(app, Some(Rewrite::NewTopic));
+    }
     let instruction =
         crate::reply::tone_instruction(tone).ok_or_else(|| format!("Unknown tone: {tone}"))?;
-    rewrite_choices(app, Some(instruction))
+    rewrite_choices(app, Some(Rewrite::Tone(instruction)))
+}
+
+/// How the picker wants the drafts on offer changed.
+enum Rewrite {
+    /// The same replies, said differently.
+    Tone(&'static str),
+    /// New replies that move the chat to a fresh subject.
+    NewTopic,
 }
 
 /// Writes new drafts for the picker: fresh ones (no tone), or the ones on
 /// offer changed by a tone instruction.
-fn rewrite_choices(app: &AppHandle, tone: Option<&'static str>) -> Result<(), String> {
+fn rewrite_choices(app: &AppHandle, rewrite: Option<Rewrite>) -> Result<(), String> {
     let pending = PENDING_CHOICES
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -566,7 +578,7 @@ fn rewrite_choices(app: &AppHandle, tone: Option<&'static str>) -> Result<(), St
     let app = app.clone();
     std::thread::spawn(move || {
         let shown = pending.drafts.join(" / ");
-        let result = match tone {
+        let result = match rewrite {
             // Fresh replies: unlike the ones just shown.
             None => crate::reply::draft_for_typing(
                 &pending.jpeg,
@@ -575,8 +587,17 @@ fn rewrite_choices(app: &AppHandle, tone: Option<&'static str>) -> Result<(), St
                 true,
                 None,
             ),
+            // Fresh replies on a new subject, unlike the ones just shown; the
+            // operator's own hint, if any, still comes first.
+            Some(Rewrite::NewTopic) => {
+                let hint = match pending.hint.as_deref() {
+                    Some(h) => format!("{h} {}", crate::reply::NEW_TOPIC_HINT),
+                    None => crate::reply::NEW_TOPIC_HINT.to_string(),
+                };
+                crate::reply::draft_for_typing(&pending.jpeg, Some(&hint), Some(&shown), true, None)
+            }
             // The same replies, changed: they are the starting point.
-            Some(instruction) => {
+            Some(Rewrite::Tone(instruction)) => {
                 let tone =
                     format!("{instruction} Keep what these replies say, only change how: {shown}");
                 crate::reply::draft_for_typing(
