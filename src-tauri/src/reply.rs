@@ -364,6 +364,25 @@ fn stock_phrase(text: &str) -> Option<&'static str> {
     STOCK_PHRASES.iter().copied().find(|p| lower.contains(p))
 }
 
+/// Ways to give the user's first name in a new chat. One is picked per draft so
+/// the name is not given with the same "I'm Celina, by the way." in every chat.
+const NAME_INTRO_STYLES: &[&str] = &[
+    "weave the first name into the middle of a sentence that reacts to what they wrote (such as \"... and you can call me [first name]\")",
+    "give the first name as a playful aside after your first sentence (such as \"[first name] here, and ...\")",
+    "give the first name as a quick aside (such as \"I'm [first name], by the way\")",
+    "open with the first name on its own, then react to what they wrote (such as \"[first name]. And ...\")",
+    "give the first name right before your closing question (such as \"[first name] wants to know ...\")",
+    "tie the first name to something they said (such as \"Someone with your taste gets to call me [first name] ...\")",
+];
+
+/// Which way to give the name next, rotating per draft.
+static NAME_INTRO_TURN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn next_name_intro_style() -> &'static str {
+    let turn = NAME_INTRO_TURN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    NAME_INTRO_STYLES[turn % NAME_INTRO_STYLES.len()]
+}
+
 /// Which built-in fallback line to use next, so the same one is not typed in
 /// chat after chat (the fixed deflection became a signature line).
 static FALLBACK_TURN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -1123,13 +1142,13 @@ fn build_request_with_options(
     }
 
     match extras.chat_stage {
-        Some(crate::screen_text::ChatStage::New) => prompt.push_str(
+        Some(crate::screen_text::ChatStage::New) => prompt.push_str(&format!(
             "\n\nNEW CHAT: the start of this chat is on screen. If none of the user's coloured \
-             bubbles has given the user's first name yet, open this reply by giving it (for \
-             example \"I'm [first name], by the way.\"), then reply to what they wrote. Take the first \
-             name from the line under the username on the user's \"you are\" profile card, \
-             never the username itself.",
-        ),
+             bubbles has given the user's first name yet, give it in this reply: {}. Then \
+             reply to what they wrote. Take the first name from the line under the username \
+             on the user's \"you are\" profile card, never the username itself.",
+            next_name_intro_style()
+        )),
         Some(crate::screen_text::ChatStage::Ongoing) => prompt.push_str(
             "\n\nONGOING CHAT: this chat started earlier and older messages are scrolled away. \
              Do not introduce yourself or give your name unless their latest message asks for it.",
@@ -3005,11 +3024,24 @@ mod tests {
                 .to_string()
         };
         let new = prompt_for(Some(ChatStage::New));
-        assert!(new.contains("NEW CHAT") && new.contains("open this reply by giving it"));
+        assert!(new.contains("NEW CHAT") && new.contains("give it in this reply"));
+        assert!(!new.contains("open this reply by giving it"));
         let ongoing = prompt_for(Some(ChatStage::Ongoing));
         assert!(ongoing.contains("ONGOING CHAT") && !ongoing.contains("NEW CHAT"));
         let unknown = prompt_for(None);
         assert!(!unknown.contains("NEW CHAT") && !unknown.contains("ONGOING CHAT"));
+    }
+
+    #[test]
+    fn a_new_chat_gives_the_name_a_different_way_each_draft() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..NAME_INTRO_STYLES.len() {
+            seen.insert(next_name_intro_style());
+        }
+        assert_eq!(seen.len(), NAME_INTRO_STYLES.len());
+        for style in NAME_INTRO_STYLES {
+            assert!(style.contains("[first name]"), "{style}");
+        }
     }
 
     #[test]
