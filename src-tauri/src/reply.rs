@@ -2868,9 +2868,154 @@ const MORE_CHOICES_WAIT: Duration = Duration::from_secs(4);
 /// How each of the three drafts to choose from should differ.
 const CHOICE_VARIANTS: [Option<&str>; 3] = [
     None,
-    Some("Make this version more playful and casual than a usual reply."),
-    Some("Make this version warmer and more personal, and end on a different kind of question."),
+    Some(
+        "This is the second of three versions written at the same time, so it must read as a \
+         different message, not a reword of the obvious one. Take a lighter, teasing angle: \
+         open with something they said or a playful line, never with how you feel or with a \
+         reaction word, and end with a different kind of question.",
+    ),
+    Some(
+        "This is the third of three versions written at the same time, so it must read as a \
+         different message, not a reword of the obvious one. Take a concrete angle: open with \
+         what you would do, or one small specific detail, never with how you feel or with a \
+         reaction word, and end with a question about a different thing they mentioned.",
+    ),
 ];
+
+/// Words two drafts share, as a share of all their words. Three versions of
+/// one reply that were the same message in other words scored about 0.5.
+fn shared_words(a: &str, b: &str) -> f32 {
+    let words = |t: &str| -> std::collections::HashSet<String> {
+        t.split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let (wa, wb) = (words(a), words(b));
+    let union = wa.union(&wb).count();
+    if union == 0 {
+        return 1.0;
+    }
+    wa.intersection(&wb).count() as f32 / union as f32
+}
+
+/// True when two of the versions to choose from would read as the same
+/// message: they open alike, end on the same question, or mostly share words.
+fn too_alike(a: &str, b: &str) -> bool {
+    if opening(a) == opening(b) {
+        return true;
+    }
+    if let (Some(qa), Some(qb)) = (closing_question(a), closing_question(b)) {
+        if same_cta(qa, qb) {
+            return true;
+        }
+    }
+    shared_words(a, b) >= 0.45
+}
+
+/// Splits drafts into those different enough to offer side by side and those
+/// that read like one already kept.
+fn distinct_choices(drafts: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let mut kept: Vec<String> = Vec::new();
+    let mut alike = Vec::new();
+    for draft in drafts {
+        if kept.iter().any(|k| too_alike(k, &draft)) {
+            alike.push(draft);
+        } else {
+            kept.push(draft);
+        }
+    }
+    (kept, alike)
+}
+
+/// Asks for a version that reads as a different message from the ones
+/// already kept, for the picker.
+fn build_different_version_rewrite_request(
+    model: &str,
+    max_tokens: u32,
+    reasoning_effort: Option<&str>,
+    draft: &str,
+    kept: &[String],
+) -> Value {
+    let others = kept
+        .iter()
+        .map(|k| format!("- {k}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "system",
+                "content": format!(
+                    "Rewrite the chat message below so it reads as a clearly different message \
+                     from these, which will be shown next to it:\n{others}\nDo not open with \
+                     the same words or the same kind of statement as any of them, take a \
+                     different angle on the same situation, and end with a different question. \
+                     Keep the meaning, tone and length. Reply with the rewritten message text \
+                     only, with no quotes and no explanation."
+                )
+            },
+            { "role": "user", "content": draft }
+        ]
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    body
+}
+
+/// Replaces versions that read like one already kept with rewrites that take
+/// a different angle, while time remains; a look-alike that cannot be
+/// rewritten in time is left out rather than shown twice.
+fn make_choices_distinct(
+    drafts: Vec<String>,
+    attempts: &[Attempt<'static>],
+    deadline: std::time::Instant,
+) -> Vec<String> {
+    let (mut kept, alike) = distinct_choices(drafts);
+    if alike.is_empty() {
+        return kept;
+    }
+    info!(
+        "{} of the versions to choose from read like another, asking for different angles",
+        alike.len()
+    );
+    let Some(attempt) = attempts.iter().find(|a| a.key.is_some()).cloned() else {
+        return kept;
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    for draft in alike {
+        let sender = sender.clone();
+        let attempt = attempt.clone();
+        let kept = kept.clone();
+        std::thread::spawn(move || {
+            let key = attempt.key.as_deref().unwrap_or_default();
+            let body = build_different_version_rewrite_request(
+                attempt.model,
+                attempt.max_tokens,
+                attempt.reasoning_effort,
+                &draft,
+                &kept,
+            );
+            let _ = sender.send(rewrite_reply(attempt.url, key, &body, Some(deadline)));
+        });
+    }
+    drop(sender);
+    while let Ok(result) =
+        receiver.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+    {
+        match result {
+            Ok(rewrite) if !kept.iter().any(|k| too_alike(k, &rewrite)) => kept.push(rewrite),
+            Ok(rewrite) => {
+                info!("A rewritten version still read like another, leaving it out: {rewrite}")
+            }
+            Err(e) => info!("Could not rewrite a look-alike version: {e}"),
+        }
+    }
+    kept
+}
 
 /// Drafts what to type. With `choose`, writes up to three different versions
 /// at once for the user to pick from; a single result (or `choose` off) is
@@ -2955,6 +3100,7 @@ pub fn draft_for_typing(
             drafts.push(draft.clone());
         }
     }
+    let drafts = make_choices_distinct(drafts, &attempts, draft_deadline);
     if drafts.is_empty() {
         let error = results
             .into_iter()
@@ -3069,6 +3215,48 @@ mod tests {
         assert!(ongoing.contains("ONGOING CHAT") && !ongoing.contains("NEW CHAT"));
         let unknown = prompt_for(None);
         assert!(!unknown.contains("NEW CHAT") && !unknown.contains("ONGOING CHAT"));
+    }
+
+    #[test]
+    fn versions_that_read_like_one_message_are_not_offered_side_by_side() {
+        // The picker showed these three; every one opened "It hurts to hear".
+        let shown = [
+            "It hurts to hear you say things like that when I genuinely care about what we share here. I am not here to waste your time or play games with you. What made you feel like I do not care about you at all?",
+            "It really hurts to hear you talk to me like that when I care about what we have. I am not here to waste your time or treat you that way. What can I do to show you how much I enjoy talking with you?",
+            "It hurts to hear you talk to me like that because I truly care about what we share here. I am not here to waste your time or treat you that way at all. What can I do to show you how much I enjoy our talks?",
+        ];
+        assert!(too_alike(shown[0], shown[1]));
+        assert!(too_alike(shown[0], shown[2]));
+        assert!(too_alike(shown[1], shown[2]));
+        let (kept, alike) = distinct_choices(shown.iter().map(|s| s.to_string()).collect());
+        assert_eq!(kept, vec![shown[0].to_string()]);
+        assert_eq!(alike.len(), 2);
+
+        let different = [
+            shown[0],
+            "Slow down, cowboy. You asked for a drink one day and wrote me off the next, which tells me you want me more than you let on. If I were sitting across from you right now, what would you order for me?",
+            "Nobody is playing games here, I just like a man who can stand a little waiting. Tell me honestly, what did you picture happening on that drink?",
+        ];
+        let (kept, alike) = distinct_choices(different.iter().map(|s| s.to_string()).collect());
+        assert_eq!(kept.len(), 3, "{alike:?}");
+    }
+
+    #[test]
+    fn the_second_and_third_versions_are_told_to_take_their_own_angle() {
+        for variant in CHOICE_VARIANTS.iter().flatten() {
+            assert!(variant.contains("different message"), "{variant}");
+            assert!(variant.contains("never with how you feel"), "{variant}");
+        }
+        let body = build_different_version_rewrite_request(
+            "m",
+            100,
+            None,
+            "It hurts to hear that.",
+            &["It hurts to hear you say that.".to_string()],
+        );
+        let system = body["messages"][0]["content"].as_str().unwrap();
+        assert!(system.contains("- It hurts to hear you say that."));
+        assert!(system.contains("different angle"));
     }
 
     #[test]
