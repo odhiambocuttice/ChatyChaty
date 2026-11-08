@@ -215,3 +215,22 @@ When analyzing chat screenshots or drafting AI replies:
   - **Middle column:** The **chats** (white left-aligned bubbles = client; purple/colored right-aligned bubbles = model, and bottom input box = unsent draft).
   - **Right panel (marked `"you are"`):** The **model** (persona the user is playing).
 - **Reading the Model's Name:** Always read the model's name from the **right** panel (under `"you are"`). The bold pink/colored title at the top of the right panel is the profile handle/username (e.g., `VividKindness`), while the **model's actual first name** is on the line immediately below the handle, before the comma and age (e.g., `Kiana` in `Kiana, 57`). Only give the model's first name when asked for the model name—never confuse the username/handle or age with the model's name.
+
+### Reply Content Rules
+
+These rules govern the content of every drafted reply, on top of the layout rules above.
+
+**GREEN chats: never start, only continue.**
+
+- Sexual conversation is permitted in a GREEN chat, but only if the client initiates it.
+- The model must never introduce or steer toward a sexual topic. If the client has not gone there, the draft stays flirtatious and suggestive at most.
+- Once the client has started a sexual conversation, do not redirect to another topic. Continue naturally and match his direction and pace.
+- Before drafting, scan the client's last messages to decide which side of this line the chat is on. When unsure, treat it as not initiated.
+
+**Text techniques (use in every chat, regardless of colour):**
+
+1. _Create a story._ Open a scene he has to step into, e.g. "I had the craziest daydream today... want to hear it?" or "Imagine walking into a room and seeing me... what am I wearing?"
+2. _Keep him wanting more._ End on an open loop that only his reply can close, e.g. "I have a secret... think you can guess it?" or "If you could give me one command... what would it be?"
+3. _Make him feel special._ Single him out, e.g. "I don't say this often, but you seem different..." or "Do you know how much you affect me?"
+
+Drafts should end with a hook or question so the client has a reason to answer. Keep them in the model's first-person voice and consistent with the persona shown in the right panel.
